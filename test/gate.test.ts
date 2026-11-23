@@ -208,6 +208,32 @@ describe('runGate against a fake Bilinc', () => {
     expect(failedIds(failed)).toEqual(['status.runtime-version']);
   });
 
+  it('an exception mid-run keeps the checks so far and ends with a failing aborted check, never a secret or stack', async () => {
+    const fake = fakeBilinc();
+    const status = fake.bilinc.client.status.bind(fake.bilinc.client);
+    let calls = 0;
+    // The credit reads around each measured call go through status(); the sixth one throws.
+    fake.bilinc.client.status = () => (++calls === 6 ? Promise.reject(new TypeError('boom with bil_live_abc123XYZ inside')) : status());
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'r1a', sleep: fake.sleep, log: quiet });
+    expect(report.ok).toBe(false);
+    expect(report.results.find((result) => result.id === 'project.empty')?.ok).toBe(true);
+    expect(report.results.length).toBeGreaterThan(2);
+    const last = report.results.at(-1);
+    expect(last).toMatchObject({ id: 'aborted', item: 'gate', ok: false });
+    expect(last?.detail).toContain('TypeError: boom with');
+    expect(JSON.stringify(report)).not.toContain('bil_live_abc123XYZ');
+    expect(last?.detail).not.toContain('    at ');
+  });
+
+  it('an aborted run reports a Bilinc error by code and status', async () => {
+    const fake = fakeBilinc();
+    const status = fake.bilinc.client.status.bind(fake.bilinc.client);
+    let calls = 0;
+    fake.bilinc.client.status = () => (++calls === 6 ? Promise.reject(new FakeBilincError('cloud_runtime_unavailable', 503)) : status());
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'r1b', sleep: fake.sleep, log: quiet });
+    expect(report.results.at(-1)).toMatchObject({ id: 'aborted', ok: false, detail: 'cloud_runtime_unavailable 503' });
+  });
+
   it('fails the credit checks when recall costs more than one credit', async () => {
     const fake = fakeBilinc({ recallCost: 2 });
     const report = await runGate({ bilinc: fake.bilinc, runId: 'r2', sleep: fake.sleep, log: quiet });

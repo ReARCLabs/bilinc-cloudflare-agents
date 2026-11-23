@@ -89,6 +89,14 @@ function describeError(error) {
   return isError(error) ? `${error.code} ${error.status}` : 'no error';
 }
 
+// Code and status for a Bilinc error; otherwise name and a bounded message with token-shaped text removed. Never a stack.
+export function abortDetail(error) {
+  if (isError(error)) return describeError(error);
+  const name = error instanceof Error ? error.name : 'Error';
+  const message = error instanceof Error ? error.message : String(error);
+  return `${name}: ${message.replace(/\bbil_[A-Za-z0-9_-]+/g, '[redacted]').replace(/\s+/g, ' ').slice(0, 200)}`;
+}
+
 export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defaultLog, waitForExpiry = false, allowNonEmpty = false }) {
   const { client, prefix } = bilinc;
   const results = [];
@@ -129,207 +137,213 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
     return { value, error };
   };
 
-  const project = await client.list({ limit: 1 });
-  check('project.empty', 'gate', project.total === 0 || allowNonEmpty, `${project.total} entries in the project`);
-  if (project.total > 0 && !allowNonEmpty) return finish();
+  try {
+    const project = await client.list({ limit: 1 });
+    check('project.empty', 'gate', project.total === 0 || allowNonEmpty, `${project.total} entries in the project`);
+    if (project.total > 0 && !allowNonEmpty) return finish();
 
-  const startCredits = await credits();
-  const status = await client.status();
-  check(
-    'status.capabilities',
-    'G5',
-    CAPABILITIES.every((name) => status.capabilities[name] === true),
-    CAPABILITIES.map((name) => `${name}=${String(status.capabilities[name])}`).join(' '),
-  );
-  check(
-    'status.runtime-version',
-    'G5',
-    typeof status.runtimeVersion === 'string' && status.runtimeVersion.length > 0,
-    `sidecar runtime ${String(status.runtimeVersion)}`,
-  );
-  check('status.recallProfiles', 'G5', ['fast', 'balanced'].every((profile) => status.recallProfiles.includes(profile)), status.recallProfiles.join(','));
-  if (!allowNonEmpty) {
-    const existing = await client.listSnapshots({ limit: 20 });
-    check('snapshots.empty', 'G6', existing.length === 0, `${existing.length} checkpoints before the run`);
-  }
-
-  const fact = `${prefix}gate-${runId}-fact`;
-  const redactedKey = `${prefix}gate-${runId}-redacted`;
-  const refusedKey = `${prefix}gate-${runId}-refused`;
-  const otherKey = `cf.${GATE_NAMESPACE}b.gate-${runId}-other`;
-  const sessionId = `gate-${runId}`;
-  const commit = (key, value, namespace = GATE_NAMESPACE) =>
-    client.commit({ key, value, source: 'cloudflare-agent', sessionId, metadata: { agentId: 'gate', namespace } });
-
-  const listed = await measured('list', 0, () => client.list({ prefix, order: 'newest', values: 'none', limit: 10 }));
-  check('list.order-newest', 'G5', listed.error === undefined, describeError(listed.error));
-
-  const first = await measured('commit', 1, () => commit(fact, 'The gate test colour is blue.'));
-  check(
-    'commit.shape',
-    'G6',
-    first.error === undefined && typeof first.value.entryVersion === 'string' && first.value.affectedKeys.includes(fact),
-    first.error === undefined ? `entryVersion ${String(first.value.entryVersion)}` : describeError(first.error),
-  );
-
-  const label = `gate: before change ${runId}`;
-  const created = await measured('createSnapshot', 2, () => client.createSnapshot({ label }));
-  const snapshotId = created.value?.id;
-  check(
-    'createSnapshot.shape',
-    'G6',
-    typeof snapshotId === 'string' && SNAPSHOT_ID_RE.test(snapshotId) && created.value.label === label,
-    created.error === undefined ? `id ${String(snapshotId)}` : describeError(created.error),
-  );
-  if (typeof snapshotId !== 'string') return finish();
-
-  const listedSnapshots = await measured('listSnapshots', 0, () => client.listSnapshots({ limit: 20 }));
-  const newest = listedSnapshots.value?.[0];
-  check(
-    'listSnapshots.newest-first',
-    'G6',
-    newest !== undefined &&
-      newest.id === snapshotId &&
-      newest.label === label &&
-      !Number.isNaN(Date.parse(newest.createdAt)) &&
-      typeof newest.totalEntries === 'number',
-    listedSnapshots.error === undefined ? `newest ${String(newest?.id)}` : describeError(listedSnapshots.error),
-  );
-
-  const second = await measured('commit.upsert', 1, () => commit(fact, 'The gate test colour is red.'));
-  check('commit.upsert.accepted', 'G7', second.error === undefined, describeError(second.error));
-  const history = await measured('history', 0, () => client.history({ key: fact, values: 'preview', limit: 20 }));
-  check(
-    'commit.upsert.history',
-    'G7',
-    history.error === undefined && history.value.exists === true && history.value.entries.length >= 2,
-    history.error === undefined ? `${history.value.entries.length} versions` : describeError(history.error),
-  );
-  const afterUpsert = await measured('list.after-upsert', 0, () => client.list({ prefix, order: 'newest', values: 'none', limit: 10 }));
-  check(
-    'commit.upsert.total',
-    'G7',
-    afterUpsert.error === undefined &&
-      afterUpsert.value.entries.filter((entry) => entry.key === fact).length === 1 &&
-      afterUpsert.value.total === (listed.value?.total ?? 0) + 1,
-    afterUpsert.error === undefined ? `total ${afterUpsert.value.total}` : describeError(afterUpsert.error),
-  );
-
-  const recalled = await measured('recall', 1, () => client.recall({ query: 'gate test colour', profile: 'balanced', limit: 20 }));
-  const hit = recalled.value?.find((candidate) => candidate.key === fact);
-  check(
-    'recall.shape',
-    'G6',
-    hit !== undefined &&
-      hit.value.includes('red') &&
-      typeof hit.entryVersion === 'string' &&
-      typeof hit.updatedAt === 'string' &&
-      !Number.isNaN(Date.parse(hit.updatedAt)),
-    recalled.error !== undefined
-      ? describeError(recalled.error)
-      : hit === undefined
-        ? `${recalled.value.length} hits, none for the committed key`
-        : 'hit for the committed key',
-  );
-
-  const diffed = await measured('diff', 0, () => client.diff({ fromSnapshotId: snapshotId, includeValues: false, limit: 100 }));
-  check(
-    'diff.shape',
-    'G6',
-    diffed.error === undefined && diffed.value.modified.includes(fact) && diffed.value.counts.modified >= 1,
-    diffed.error === undefined ? `counts ${JSON.stringify(diffed.value.counts)}` : describeError(diffed.error),
-  );
-
-  const samples = secretSamples();
-  const redacted = await measured('commit.secret-redacted', 1, () => commit(redactedKey, samples.assignment));
-  check(
-    'secret_scan.redacted',
-    'G5',
-    redacted.error === undefined && redacted.value.warnings.some((warning) => warning.code === 'secret_redacted'),
-    redacted.error === undefined ? `${redacted.value.warnings.length} warnings` : describeError(redacted.error),
-  );
-  const refused = await measured('commit.secret-detected', 0, () => commit(refusedKey, samples.providerShaped));
-  expectError('secret_scan.detected', 'G5', refused.error, 'secret_detected', 422);
-
-  const missing = await measured('diff.unknown-checkpoint', 0, () =>
-    client.diff({ fromSnapshotId: `gate-missing-${runId}`, includeValues: false, limit: 10 }),
-  );
-  expectError('error-body.snapshot_not_found', 'G10', missing.error, 'snapshot_not_found', 404);
-
-  await measured('commit.other-namespace', 1, () => commit(otherKey, 'Outside the gate namespace.', `${GATE_NAMESPACE}b`));
-  const reason = `gate: restore ${runId}`;
-  const preview = await measured('rollbackPreview', 0, () => client.rollbackPreview({ snapshotId, reason, limit: 100 }));
-  const planned = preview.value;
-  check(
-    'preview.project-wide',
-    'G10',
-    planned !== undefined &&
-      planned.removeKeys.includes(otherKey) &&
-      planned.removeKeys.includes(redactedKey) &&
-      planned.updateKeys.includes(fact) &&
-      planned.counts.remove >= 2 &&
-      planned.counts.update >= 1,
-    planned === undefined ? describeError(preview.error) : `counts ${JSON.stringify(planned.counts)}`,
-  );
-  if (planned === undefined) return finish();
-  const ttl = Date.parse(planned.confirmationExpiresAt) - Date.now();
-  check(
-    'preview.token-ttl',
-    'G10',
-    planned.confirmationToken.length > 0 && ttl > TOKEN_TTL_MS - 60_000 && ttl <= TOKEN_TTL_MS + 5_000,
-    `expires in ${Math.round(ttl / 1000)} s`,
-  );
-
-  const rolled = await measured('rollback', 2, () => client.rollback({ snapshotId, reason, confirmationToken: planned.confirmationToken }));
-  check(
-    'rollback.execute',
-    'G10',
-    rolled.error === undefined && rolled.value.snapshotId === snapshotId && rolled.value.counts.deleted >= 2 && rolled.value.counts.updated >= 1,
-    rolled.error === undefined ? `counts ${JSON.stringify(rolled.value.counts)}` : describeError(rolled.error),
-  );
-  const replay = await measured('rollback.reused-token', 0, () =>
-    client.rollback({ snapshotId, reason, confirmationToken: planned.confirmationToken }),
-  );
-  expectError('token.single-use', 'G10', replay.error, 'state_changed_since_preview', 409);
-  const restored = await measured('diff.after-rollback', 0, () => client.diff({ fromSnapshotId: snapshotId, includeValues: false, limit: 100 }));
-  const runKeys =
-    restored.error === undefined
-      ? [...restored.value.added, ...restored.value.modified, ...restored.value.removed].filter((key) => key.includes(`gate-${runId}-`))
-      : [];
-  check(
-    'rollback.restored',
-    'G10',
-    restored.error === undefined && runKeys.length === 0,
-    restored.error === undefined ? `${runKeys.length} keys of this run still differ` : describeError(restored.error),
-  );
-
-  if (waitForExpiry) {
-    await measured('commit.expiry-setup', 1, () => commit(fact, 'The gate test colour is green.'));
-    const lateReason = `gate: expiry ${runId}`;
-    const late = await measured('rollbackPreview.expiry', 0, () => client.rollbackPreview({ snapshotId, reason: lateReason, limit: 10 }));
-    if (late.value === undefined) {
-      check('token.expires-300s', 'G10', false, `preview failed: ${describeError(late.error)}`);
-    } else {
-      log(`waiting ${Math.round(EXPIRY_WAIT_MS / 1000)} s for the preview token to expire`);
-      await sleep(EXPIRY_WAIT_MS);
-      const expired = await measured('rollback.expired-token', 0, () =>
-        client.rollback({ snapshotId, reason: lateReason, confirmationToken: late.value.confirmationToken }),
-      );
-      expectError('token.expires-300s', 'G10', expired.error, 'rollback_confirmation_expired', 410);
+    const startCredits = await credits();
+    const status = await client.status();
+    check(
+      'status.capabilities',
+      'G5',
+      CAPABILITIES.every((name) => status.capabilities[name] === true),
+      CAPABILITIES.map((name) => `${name}=${String(status.capabilities[name])}`).join(' '),
+    );
+    check(
+      'status.runtime-version',
+      'G5',
+      typeof status.runtimeVersion === 'string' && status.runtimeVersion.length > 0,
+      `sidecar runtime ${String(status.runtimeVersion)}`,
+    );
+    check('status.recallProfiles', 'G5', ['fast', 'balanced'].every((profile) => status.recallProfiles.includes(profile)), status.recallProfiles.join(','));
+    if (!allowNonEmpty) {
+      const existing = await client.listSnapshots({ limit: 20 });
+      check('snapshots.empty', 'G6', existing.length === 0, `${existing.length} checkpoints before the run`);
     }
+
+    const fact = `${prefix}gate-${runId}-fact`;
+    const redactedKey = `${prefix}gate-${runId}-redacted`;
+    const refusedKey = `${prefix}gate-${runId}-refused`;
+    const otherKey = `cf.${GATE_NAMESPACE}b.gate-${runId}-other`;
+    const sessionId = `gate-${runId}`;
+    const commit = (key, value, namespace = GATE_NAMESPACE) =>
+      client.commit({ key, value, source: 'cloudflare-agent', sessionId, metadata: { agentId: 'gate', namespace } });
+
+    const listed = await measured('list', 0, () => client.list({ prefix, order: 'newest', values: 'none', limit: 10 }));
+    check('list.order-newest', 'G5', listed.error === undefined, describeError(listed.error));
+
+    const first = await measured('commit', 1, () => commit(fact, 'The gate test colour is blue.'));
+    check(
+      'commit.shape',
+      'G6',
+      first.error === undefined && typeof first.value.entryVersion === 'string' && first.value.affectedKeys.includes(fact),
+      first.error === undefined ? `entryVersion ${String(first.value.entryVersion)}` : describeError(first.error),
+    );
+
+    const label = `gate: before change ${runId}`;
+    const created = await measured('createSnapshot', 2, () => client.createSnapshot({ label }));
+    const snapshotId = created.value?.id;
+    check(
+      'createSnapshot.shape',
+      'G6',
+      typeof snapshotId === 'string' && SNAPSHOT_ID_RE.test(snapshotId) && created.value.label === label,
+      created.error === undefined ? `id ${String(snapshotId)}` : describeError(created.error),
+    );
+    if (typeof snapshotId !== 'string') return finish();
+
+    const listedSnapshots = await measured('listSnapshots', 0, () => client.listSnapshots({ limit: 20 }));
+    const newest = listedSnapshots.value?.[0];
+    check(
+      'listSnapshots.newest-first',
+      'G6',
+      newest !== undefined &&
+        newest.id === snapshotId &&
+        newest.label === label &&
+        !Number.isNaN(Date.parse(newest.createdAt)) &&
+        typeof newest.totalEntries === 'number',
+      listedSnapshots.error === undefined ? `newest ${String(newest?.id)}` : describeError(listedSnapshots.error),
+    );
+
+    const second = await measured('commit.upsert', 1, () => commit(fact, 'The gate test colour is red.'));
+    check('commit.upsert.accepted', 'G7', second.error === undefined, describeError(second.error));
+    const history = await measured('history', 0, () => client.history({ key: fact, values: 'preview', limit: 20 }));
+    check(
+      'commit.upsert.history',
+      'G7',
+      history.error === undefined && history.value.exists === true && history.value.entries.length >= 2,
+      history.error === undefined ? `${history.value.entries.length} versions` : describeError(history.error),
+    );
+    const afterUpsert = await measured('list.after-upsert', 0, () => client.list({ prefix, order: 'newest', values: 'none', limit: 10 }));
+    check(
+      'commit.upsert.total',
+      'G7',
+      afterUpsert.error === undefined &&
+        afterUpsert.value.entries.filter((entry) => entry.key === fact).length === 1 &&
+        afterUpsert.value.total === (listed.value?.total ?? 0) + 1,
+      afterUpsert.error === undefined ? `total ${afterUpsert.value.total}` : describeError(afterUpsert.error),
+    );
+
+    const recalled = await measured('recall', 1, () => client.recall({ query: 'gate test colour', profile: 'balanced', limit: 20 }));
+    const hit = recalled.value?.find((candidate) => candidate.key === fact);
+    check(
+      'recall.shape',
+      'G6',
+      hit !== undefined &&
+        hit.value.includes('red') &&
+        typeof hit.entryVersion === 'string' &&
+        typeof hit.updatedAt === 'string' &&
+        !Number.isNaN(Date.parse(hit.updatedAt)),
+      recalled.error !== undefined
+        ? describeError(recalled.error)
+        : hit === undefined
+          ? `${recalled.value.length} hits, none for the committed key`
+          : 'hit for the committed key',
+    );
+
+    const diffed = await measured('diff', 0, () => client.diff({ fromSnapshotId: snapshotId, includeValues: false, limit: 100 }));
+    check(
+      'diff.shape',
+      'G6',
+      diffed.error === undefined && diffed.value.modified.includes(fact) && diffed.value.counts.modified >= 1,
+      diffed.error === undefined ? `counts ${JSON.stringify(diffed.value.counts)}` : describeError(diffed.error),
+    );
+
+    const samples = secretSamples();
+    const redacted = await measured('commit.secret-redacted', 1, () => commit(redactedKey, samples.assignment));
+    check(
+      'secret_scan.redacted',
+      'G5',
+      redacted.error === undefined && redacted.value.warnings.some((warning) => warning.code === 'secret_redacted'),
+      redacted.error === undefined ? `${redacted.value.warnings.length} warnings` : describeError(redacted.error),
+    );
+    const refused = await measured('commit.secret-detected', 0, () => commit(refusedKey, samples.providerShaped));
+    expectError('secret_scan.detected', 'G5', refused.error, 'secret_detected', 422);
+
+    const missing = await measured('diff.unknown-checkpoint', 0, () =>
+      client.diff({ fromSnapshotId: `gate-missing-${runId}`, includeValues: false, limit: 10 }),
+    );
+    expectError('error-body.snapshot_not_found', 'G10', missing.error, 'snapshot_not_found', 404);
+
+    await measured('commit.other-namespace', 1, () => commit(otherKey, 'Outside the gate namespace.', `${GATE_NAMESPACE}b`));
+    const reason = `gate: restore ${runId}`;
+    const preview = await measured('rollbackPreview', 0, () => client.rollbackPreview({ snapshotId, reason, limit: 100 }));
+    const planned = preview.value;
+    check(
+      'preview.project-wide',
+      'G10',
+      planned !== undefined &&
+        planned.removeKeys.includes(otherKey) &&
+        planned.removeKeys.includes(redactedKey) &&
+        planned.updateKeys.includes(fact) &&
+        planned.counts.remove >= 2 &&
+        planned.counts.update >= 1,
+      planned === undefined ? describeError(preview.error) : `counts ${JSON.stringify(planned.counts)}`,
+    );
+    if (planned === undefined) return finish();
+    const ttl = Date.parse(planned.confirmationExpiresAt) - Date.now();
+    check(
+      'preview.token-ttl',
+      'G10',
+      planned.confirmationToken.length > 0 && ttl > TOKEN_TTL_MS - 60_000 && ttl <= TOKEN_TTL_MS + 5_000,
+      `expires in ${Math.round(ttl / 1000)} s`,
+    );
+
+    const rolled = await measured('rollback', 2, () => client.rollback({ snapshotId, reason, confirmationToken: planned.confirmationToken }));
+    check(
+      'rollback.execute',
+      'G10',
+      rolled.error === undefined && rolled.value.snapshotId === snapshotId && rolled.value.counts.deleted >= 2 && rolled.value.counts.updated >= 1,
+      rolled.error === undefined ? `counts ${JSON.stringify(rolled.value.counts)}` : describeError(rolled.error),
+    );
+    const replay = await measured('rollback.reused-token', 0, () =>
+      client.rollback({ snapshotId, reason, confirmationToken: planned.confirmationToken }),
+    );
+    expectError('token.single-use', 'G10', replay.error, 'state_changed_since_preview', 409);
+    const restored = await measured('diff.after-rollback', 0, () => client.diff({ fromSnapshotId: snapshotId, includeValues: false, limit: 100 }));
+    const runKeys =
+      restored.error === undefined
+        ? [...restored.value.added, ...restored.value.modified, ...restored.value.removed].filter((key) => key.includes(`gate-${runId}-`))
+        : [];
+    check(
+      'rollback.restored',
+      'G10',
+      restored.error === undefined && runKeys.length === 0,
+      restored.error === undefined ? `${runKeys.length} keys of this run still differ` : describeError(restored.error),
+    );
+
+    if (waitForExpiry) {
+      await measured('commit.expiry-setup', 1, () => commit(fact, 'The gate test colour is green.'));
+      const lateReason = `gate: expiry ${runId}`;
+      const late = await measured('rollbackPreview.expiry', 0, () => client.rollbackPreview({ snapshotId, reason: lateReason, limit: 10 }));
+      if (late.value === undefined) {
+        check('token.expires-300s', 'G10', false, `preview failed: ${describeError(late.error)}`);
+      } else {
+        log(`waiting ${Math.round(EXPIRY_WAIT_MS / 1000)} s for the preview token to expire`);
+        await sleep(EXPIRY_WAIT_MS);
+        const expired = await measured('rollback.expired-token', 0, () =>
+          client.rollback({ snapshotId, reason: lateReason, confirmationToken: late.value.confirmationToken }),
+        );
+        expectError('token.expires-300s', 'G10', expired.error, 'rollback_confirmation_expired', 410);
+      }
+    }
+
+    const forgotten = await measured('forget', 1, () => client.forget({ key: fact, reason: `gate: cleanup ${runId}` }));
+    check(
+      'forget.removed',
+      'G10',
+      forgotten.error === undefined && forgotten.value.removed === true && forgotten.value.key === fact,
+      describeError(forgotten.error),
+    );
+
+    const endCredits = await credits();
+    check('credits.total', 'G10', startCredits - endCredits === expectedTotal, `spent ${startCredits - endCredits}, expected ${expectedTotal}`);
+    return finish();
+  } catch (error) {
+    // Keep every check made so far: the report is still written, and it fails.
+    check('aborted', 'gate', false, abortDetail(error));
+    return finish();
   }
-
-  const forgotten = await measured('forget', 1, () => client.forget({ key: fact, reason: `gate: cleanup ${runId}` }));
-  check(
-    'forget.removed',
-    'G10',
-    forgotten.error === undefined && forgotten.value.removed === true && forgotten.value.key === fact,
-    describeError(forgotten.error),
-  );
-
-  const endCredits = await credits();
-  check('credits.total', 'G10', startCredits - endCredits === expectedTotal, `spent ${startCredits - endCredits}, expected ${expectedTotal}`);
-  return finish();
 }
 
 async function main(argv) {
