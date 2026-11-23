@@ -138,6 +138,15 @@ describe("UnlockScreen", () => {
     }
   });
 
+  it("keeps the form and shows the server-error text after a 503 without the too-short body", async () => {
+    mockFetch(() => new Response("<html>Service Unavailable</html>", { status: 503 }));
+    render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
+    await submit("correct-horse-battery-staple");
+    expect(await screen.findByText(SERVER_ERROR_TEXT)).toBeTruthy();
+    expect(screen.queryByText(TOKEN_TOO_SHORT_TEXT)).toBeNull();
+    expect(screen.getByRole("button", { name: "Unlock" })).toBeTruthy();
+  });
+
   it("shows the wait after a 429 and the too-short text after a 503", async () => {
     mockFetch(() => new Response('{"error":"too_many_attempts"}', { status: 429, headers: { "Retry-After": "42" } }));
     render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
@@ -163,6 +172,17 @@ describe("App", () => {
     mockFetch(() => new Response('{"error":"access_token_too_short"}', { status: 503 }));
     render(<App />);
     expect(await screen.findByText(TOKEN_TOO_SHORT_TEXT)).toBeTruthy();
+  });
+
+  it("treats a 503 from /api/health without the too-short body like any other failed answer", async () => {
+    for (const body of ["<html>Service Unavailable</html>", '{"error":"overloaded"}', ""]) {
+      mockFetch(() => new Response(body, { status: 503 }));
+      render(<App />);
+      await waitFor(() => expect(hooks.useAgent).toHaveBeenCalled());
+      expect(screen.queryByText(TOKEN_TOO_SHORT_TEXT)).toBeNull();
+      cleanup();
+      vi.clearAllMocks();
+    }
   });
 
   it("shows the banner and connects to the chat named in the hash", async () => {
