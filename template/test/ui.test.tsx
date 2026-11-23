@@ -30,8 +30,9 @@ const preview: RollbackPreviewResult = {
   snapshotId: "snap_1",
   counts: { create: 0, update: 1, remove: 2 },
   createKeys: [],
-  updateKeys: ["cf.default.favourite-colour"],
-  removeKeys: ["cf.default.a", "cf.default.b"],
+  updateKeys: ["favourite-colour"],
+  removeKeys: ["a"],
+  outsideNamespace: 1,
   truncated: true,
   expiresAt: "2026-11-23T12:05:00.000Z",
 };
@@ -245,8 +246,17 @@ describe("ToolCard", () => {
   it("renders the preview counts, key lists and truncated note", () => {
     render(<ToolCard part={previewPart} />);
     expect(screen.getByText(/1 to change back, 2 to remove/)).toBeTruthy();
-    expect(screen.getByText("cf.default.favourite-colour")).toBeTruthy();
+    expect(screen.getByText("favourite-colour")).toBeTruthy();
     expect(screen.getByText(/cut short/)).toBeTruthy();
+  });
+
+  it("says how many listed keys are outside this agent's namespace, and says nothing when there are none", () => {
+    render(<ToolCard part={previewPart} />);
+    expect(screen.getByText("Keys outside this agent's namespace, not listed: 1.")).toBeTruthy();
+    cleanup();
+    const own = { ...previewPart, output: { ...preview, outsideNamespace: 0 } } as unknown as ToolUIPart;
+    render(<ToolCard part={own} />);
+    expect(screen.queryByText(/outside this agent's namespace/)).toBeNull();
   });
 
   it("renders the diff counts and keys", () => {

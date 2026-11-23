@@ -107,7 +107,8 @@ describe("demo script", () => {
       { text: "Rolled back." },
     ]);
     const preview = toolParts(messages, "bilinc_rollback_preview")[0]!.output as Record<string, unknown>;
-    expect(preview).toMatchObject({ counts: { create: 0, update: 1, remove: 0 }, updateKeys: [KEY] });
+    // The key lists hold suffixes, the keys bilinc_history and bilinc_forget accept.
+    expect(preview).toMatchObject({ counts: { create: 0, update: 1, remove: 0 }, updateKeys: [KEY.slice("cf.default.".length)], outsideNamespace: 0 });
     expect(JSON.stringify(preview)).not.toContain("tok_");
     const pending = toolParts(messages, "bilinc_rollback")[0] as { state: string; toolCallId?: string };
     expect(pending.state).toBe("approval-requested");

@@ -311,9 +311,10 @@ describe("bilinc_rollback_preview", () => {
       previewId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
       snapshotId: "snap_20261123_c3",
       counts: { create: 1, update: 2, remove: 3 },
-      createKeys: ["cf.default.old-fact"],
-      updateKeys: ["cf.default.favorite-color", "other.project.key"],
-      removeKeys: ["cf.default.a", "cf.default.b", "cf.default.c"],
+      createKeys: ["old-fact"],
+      updateKeys: ["favorite-color"],
+      removeKeys: ["a", "b", "c"],
+      outsideNamespace: 1,
       truncated: false,
       expiresAt: "2026-11-23T12:05:00.000Z",
     });
@@ -323,6 +324,28 @@ describe("bilinc_rollback_preview", () => {
       confirmationToken: TOKEN,
       reason: "undo bad import",
       expiresAt: Date.parse("2026-11-23T12:05:00.000Z"),
+    });
+  });
+
+  it("lists only keys bilinc_history and bilinc_forget accept, counts the rest as outsideNamespace, and keeps Bilinc's project-wide counts", async () => {
+    mockFetch(
+      ok({
+        ...previewFixture,
+        counts: { create: 40, update: 3, remove: 4 },
+        createKeys: ["cf.default.kept", "cf.other.fact", "cf.default.Upper_Case"],
+        updateKeys: ["cf.default.nested.key", "cf.default.x"],
+        removeKeys: [`cf.default.${"a".repeat(129)}`, "cf.defaultish.y", "plain"],
+        truncated: true,
+      }),
+    );
+    const result = await run<Record<string, unknown>>(setup().tools, "bilinc_rollback_preview", { snapshotId: "snap_20261123_c3", reason: "r" });
+    expect(result).toMatchObject({
+      counts: { create: 40, update: 3, remove: 4 },
+      createKeys: ["kept"],
+      updateKeys: ["x"],
+      removeKeys: [],
+      outsideNamespace: 6,
+      truncated: true,
     });
   });
 

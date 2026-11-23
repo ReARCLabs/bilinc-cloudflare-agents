@@ -57,6 +57,14 @@ function versionToCheck(expectedVersion: string | undefined): string | undefined
   return !trimmed || trimmed.toLowerCase() === "unknown" ? undefined : trimmed;
 }
 
+/**
+ * The SDK keys under `prefix`, by the same rule as bilinc_history and bilinc_forget, so every listed
+ * key is one they accept. Keys of other namespaces, and stored keys that are not SDK keys, are left out.
+ */
+function ownKeys(keys: string[], prefix: string): string[] {
+  return keys.flatMap((key) => ownSuffix(key, prefix) ?? []);
+}
+
 /** True when the client stopped before fetch, so Bilinc never saw the request. */
 function neverSent(error: unknown): boolean {
   return isBilincError(error) && error.status === 0 && (error.code === "circuit_open" || error.code === "rate_capped" || error.code === "invalid_request");
@@ -152,11 +160,9 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
       execute: async ({ snapshotId }) => {
         try {
           const diff = await client.diff({ fromSnapshotId: snapshotId, includeValues: false });
-          // The same rule as bilinc_history and bilinc_forget, so every listed key is one they accept.
-          const own = (keys: string[]) => keys.flatMap((key) => ownSuffix(key, prefix) ?? []);
-          const added = own(diff.added);
-          const modified = own(diff.modified);
-          const removed = own(diff.removed);
+          const added = ownKeys(diff.added, prefix);
+          const modified = ownKeys(diff.modified, prefix);
+          const removed = ownKeys(diff.removed, prefix);
           // Bilinc's own counts are project-wide (other namespaces too), so they cannot replace these; when it cut
           // the lists short, these counts only count the listed keys.
           return {
@@ -215,7 +221,7 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
     }),
 
     bilinc_rollback_preview: tool({
-      description: `Preview rolling the whole Bilinc memory project back to a checkpoint: counts and keys that would be created, updated or removed. Nothing changes. Returns a previewId for bilinc_rollback, valid for 5 minutes. Free. ${PICK_CHECKPOINT}`,
+      description: `Preview rolling the whole Bilinc memory project back to a checkpoint: counts and keys that would be created, updated or removed. Nothing changes. The counts cover the whole project; the key lists show only this agent's entries, and outsideNamespace counts the listed keys left out because they belong to other agents. Returns a previewId for bilinc_rollback, valid for 5 minutes. Free. ${PICK_CHECKPOINT}`,
       inputSchema: z.object({
         snapshotId: z.string().describe("Checkpoint id from bilinc_checkpoint or bilinc_checkpoints"),
         reason: z.string().min(1).max(MAX_REASON_CHARS).describe("Why the rollback is wanted"),
@@ -234,13 +240,20 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
           // Before the put, so the sweep can never remove the preview made now.
           await sweepExpiredPreviews();
           await store.put(ROLLBACK_PREVIEW_STORE_PREFIX + previewId, stored);
+          const createKeys = ownKeys(preview.createKeys, prefix);
+          const updateKeys = ownKeys(preview.updateKeys, prefix);
+          const removeKeys = ownKeys(preview.removeKeys, prefix);
+          const listed = preview.createKeys.length + preview.updateKeys.length + preview.removeKeys.length;
           return {
             previewId,
             snapshotId: preview.snapshotId,
+            // Bilinc's own counts: the rollback is project-wide, and this is what the user approves.
             counts: preview.counts,
-            createKeys: preview.createKeys,
-            updateKeys: preview.updateKeys,
-            removeKeys: preview.removeKeys,
+            createKeys,
+            updateKeys,
+            removeKeys,
+            // Listed keys left out of the lists above; when truncated, only the listed keys are counted.
+            outsideNamespace: listed - createKeys.length - updateKeys.length - removeKeys.length,
             truncated: preview.truncated,
             expiresAt: preview.confirmationExpiresAt,
           };
