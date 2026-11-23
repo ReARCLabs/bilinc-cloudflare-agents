@@ -18,7 +18,7 @@ The one-click Deploy to Cloudflare button is in the [GitHub README](https://gith
 [`template/`](template) is a complete Think chat app: a chat UI, a "New chat" button, a passphrase screen, a health banner and approval cards for forget and rollback. The default model is `@cf/zai-org/glm-4.7-flash` (the `MODEL` var in `template/wrangler.jsonc`), served by Workers AI. Deploying asks for two secrets:
 
 - `BILINC_API_KEY`: a key from a **dedicated** Bilinc account for this agent, never your main one. [Sign up](https://bilinc.space/signup?next=/api-keys&utm_source=github&utm_medium=readme&utm_campaign=bilinc-cloudflare-agents): free, no card, 2,000 credits a month.
-- `APP_ACCESS_TOKEN`: a passphrase you choose, at least 16 characters. Anyone who knows it can use the agent and its Bilinc key.
+- `APP_ACCESS_TOKEN`: a passphrase you choose, at least 16 characters. Anyone who knows it can use the agent and its Bilinc key. Spaces or line breaks at either end are ignored.
 
 To deploy from a clone instead:
 

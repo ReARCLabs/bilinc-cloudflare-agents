@@ -43,6 +43,18 @@ describe("Worker routing", () => {
     expect(res.status).toBe(200);
   });
 
+  it("checks the length of, unlocks with and verifies cookies against the trimmed APP_ACCESS_TOKEN", async () => {
+    const padded = { ...e, APP_ACCESS_TOKEN: `  ${"z".repeat(16)}\n` };
+    const unlock = await send("/api/unlock", { method: "POST", body: JSON.stringify({ passphrase: "z".repeat(16) }) }, padded);
+    expect(unlock.status).toBe(200);
+    const fresh = unlock.headers.get("Set-Cookie")!.split(";")[0]!;
+    expect((await send("/api/health", { headers: { Cookie: fresh } }, padded)).status).toBe(200);
+    // The same cookie works once the padding is gone from the secret, and vice versa.
+    expect((await send("/api/health", { headers: { Cookie: fresh } }, { ...e, APP_ACCESS_TOKEN: "z".repeat(16) })).status).toBe(200);
+    const padded15 = { ...e, APP_ACCESS_TOKEN: `  ${"z".repeat(15)}  ` };
+    expect((await send("/api/health", { headers: { Cookie: fresh } }, padded15)).status).toBe(503);
+  });
+
   it("answers 405 to other methods on /api/unlock", async () => {
     expect((await send("/api/unlock")).status).toBe(405);
   });

@@ -1,7 +1,7 @@
 import { routeAgentRequest } from "agents";
 import { checkStatus } from "bilinc-cloudflare-agents";
 import { AGENT_PATH } from "./constants";
-import { handleUnlock, isTokenLongEnough, jsonResponse, verifySessionCookie } from "./gate";
+import { accessToken, handleUnlock, isTokenLongEnough, jsonResponse, verifySessionCookie } from "./gate";
 
 export { BilincAgent } from "./agent";
 export { UnlockLimiter } from "./limiter";
@@ -14,7 +14,8 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const isAgents = pathname.startsWith("/agents/");
   if (!isApi && !isAgents) return notFound();
 
-  if (!isTokenLongEnough(env.APP_ACCESS_TOKEN)) {
+  const token = accessToken(env);
+  if (!isTokenLongEnough(token)) {
     return jsonResponse(503, { error: "access_token_too_short" });
   }
 
@@ -23,7 +24,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     return handleUnlock(request, env);
   }
 
-  if (!(await verifySessionCookie(request.headers.get("Cookie"), env.APP_ACCESS_TOKEN))) {
+  if (!(await verifySessionCookie(request.headers.get("Cookie"), token))) {
     return jsonResponse(401, { error: "unauthorized" });
   }
 

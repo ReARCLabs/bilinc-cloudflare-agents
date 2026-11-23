@@ -8,9 +8,23 @@ import {
 
 const encoder = new TextEncoder();
 
-/** Whitespace at either end does not count toward the minimum; the passphrase itself is still compared exactly as set. */
+/**
+ * The one form of a passphrase the gate uses: whitespace at either end removed. It applies to
+ * APP_ACCESS_TOKEN (a secret pasted with a trailing newline) and to the typed passphrase alike,
+ * and the length check, the compare and the session key all use this value.
+ */
+export function normaliseToken(token: string | undefined): string {
+  return typeof token === "string" ? token.trim() : "";
+}
+
+/** APP_ACCESS_TOKEN, normalised once for the whole request. */
+export function accessToken(env: Pick<Env, "APP_ACCESS_TOKEN">): string {
+  return normaliseToken(env.APP_ACCESS_TOKEN);
+}
+
+/** Whitespace at either end does not count toward the minimum. */
 export function isTokenLongEnough(token: string | undefined): boolean {
-  return typeof token === "string" && token.trim().length >= MIN_ACCESS_TOKEN_LENGTH;
+  return normaliseToken(token).length >= MIN_ACCESS_TOKEN_LENGTH;
 }
 
 export function clientIp(request: Request): string {
@@ -159,10 +173,11 @@ export async function handleUnlock(request: Request, env: Env): Promise<Response
     return jsonResponse(429, { error: "too_many_attempts" }, { "Retry-After": String(gate.retryAfterSeconds) });
   }
   const submitted = await readPassphrase(request);
-  if (submitted !== null && (await passphraseMatches(submitted, env.APP_ACCESS_TOKEN))) {
+  const token = accessToken(env);
+  if (submitted !== null && (await passphraseMatches(normaliseToken(submitted), token))) {
     // Free only this request's slot: earlier failures in the bucket may be someone else's.
     if (gate.slot !== null) await limiter.release(gate.slot);
-    return jsonResponse(200, { ok: true }, { "Set-Cookie": await issueSessionCookie(env.APP_ACCESS_TOKEN) });
+    return jsonResponse(200, { ok: true }, { "Set-Cookie": await issueSessionCookie(token) });
   }
   // The failure was already counted by attempt().
   return jsonResponse(401, { error: "invalid_passphrase" });

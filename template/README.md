@@ -9,7 +9,7 @@ Not affiliated with or endorsed by Cloudflare.
 Deploying asks for two secrets:
 
 - `BILINC_API_KEY`: Bilinc is free forever, with no card and 2,000 credits a month. Create a **dedicated Bilinc account** for this agent, never your main one: [sign up and create a key](https://bilinc.space/signup?next=/api-keys&utm_source=cloudflare&utm_medium=deploy&utm_campaign=bilinc-cloudflare-agents).
-- `APP_ACCESS_TOKEN`: a passphrase you choose, at least 16 characters. Anyone who knows it can use this agent and its Bilinc key. Spaces or line breaks at either end do not count toward the 16, and the unlock screen compares the passphrase exactly as set, including any such spaces.
+- `APP_ACCESS_TOKEN`: a passphrase you choose, at least 16 characters. Anyone who knows it can use this agent and its Bilinc key. Spaces or line breaks at either end are ignored, both in the secret and in what you type on the unlock screen, and do not count toward the 16.
 
 The app shows an unlock screen first. After unlocking, the session lasts 7 days. Changing `APP_ACCESS_TOKEN` is the only way to end every session. Five wrong passphrases from one IP block that IP for up to 10 minutes (IPv6 addresses count per /64 network).
 

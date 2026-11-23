@@ -7,6 +7,7 @@ import {
   issueSessionCookie,
   isTokenLongEnough,
   limiterKey,
+  normaliseToken,
   passphraseMatches,
   verifySessionCookie,
 } from "../src/gate";
@@ -68,14 +69,18 @@ describe("helpers", () => {
     expect(isTokenLongEnough("x".repeat(16))).toBe(true);
   });
 
-  it("does not count whitespace at either end toward the minimum, and compares the passphrase exactly as set", async () => {
+  it("does not count whitespace at either end toward the minimum", () => {
     expect(isTokenLongEnough(" ".repeat(16))).toBe(false);
     expect(isTokenLongEnough(`${"x".repeat(15)} `)).toBe(false);
     expect(isTokenLongEnough(`\n${"x".repeat(15)}\t`)).toBe(false);
     expect(isTokenLongEnough(`  ${"x".repeat(16)}  `)).toBe(true);
-    const padded = `  ${"x".repeat(16)}  `;
-    expect(await passphraseMatches(padded, padded)).toBe(true);
-    expect(await passphraseMatches("x".repeat(16), padded)).toBe(false);
+  });
+
+  it("normalises a token by trimming whitespace at either end and nothing else", () => {
+    expect(normaliseToken(`  ${PASS}\n`)).toBe(PASS);
+    expect(normaliseToken(`\t${PASS} `)).toBe(PASS);
+    expect(normaliseToken("a  b")).toBe("a  b");
+    expect(normaliseToken(undefined)).toBe("");
   });
 
   it("reads CF-Connecting-IP or falls back to unknown", () => {
@@ -109,6 +114,28 @@ describe("helpers", () => {
 });
 
 describe("handleUnlock", () => {
+  it("ignores whitespace at either end of APP_ACCESS_TOKEN and of the typed passphrase, and keys the cookie on the trimmed value", async () => {
+    const padded = { ...e, APP_ACCESS_TOKEN: `  ${PASS}\n` };
+    const send = (passphrase: string) =>
+      handleUnlock(
+        new Request("https://agent.test/api/unlock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "CF-Connecting-IP": crypto.randomUUID() },
+          body: JSON.stringify({ passphrase }),
+        }),
+        padded,
+      );
+    for (const typed of [PASS, ` ${PASS} `, `  ${PASS}\n`]) {
+      const res = await send(typed);
+      expect(res.status).toBe(200);
+      const pair = cookiePair(res.headers.get("Set-Cookie")!);
+      expect(await verifySessionCookie(pair, PASS)).toBe(true);
+    }
+    expect((await send(`${PASS}x`)).status).toBe(401);
+    // A token configured without padding takes a padded typed passphrase too.
+    expect((await unlock(` ${PASS}\t`)).status).toBe(200);
+  });
+
   it("answers 200 with a cookie that verifies on the right passphrase", async () => {
     const res = await unlock(PASS);
     expect(res.status).toBe(200);
