@@ -1,0 +1,24 @@
+{
+  "name": "bilinc-cloudflare-agent",
+  "main": "src/server.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "ai": { "binding": "AI" },
+  "durable_objects": {
+    "bindings": [
+      { "name": "BilincAgent", "class_name": "BilincAgent" },
+      { "name": "UNLOCK_LIMITER", "class_name": "UnlockLimiter" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BilincAgent", "UnlockLimiter"] }],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/agents/*"]
+  },
+  "vars": {
+    "MODEL": "@cf/zai-org/glm-4.7-flash",
+    "BILINC_NAMESPACE": "default",
+    "AUTO_CHECKPOINT": "true"
+  },
+  "secrets": { "required": ["BILINC_API_KEY", "APP_ACCESS_TOKEN"] }
+}

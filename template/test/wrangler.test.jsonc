@@ -1,0 +1,20 @@
+{
+  "name": "bilinc-cloudflare-agent-test",
+  "main": "helpers/test-agent.ts",
+  "compatibility_date": "2026-08-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      { "name": "BilincAgent", "class_name": "TestAgent" },
+      { "name": "UNLOCK_LIMITER", "class_name": "UnlockLimiter" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TestAgent", "UnlockLimiter"] }],
+  "vars": {
+    "MODEL": "@cf/zai-org/glm-4.7-flash",
+    "BILINC_NAMESPACE": "default",
+    "AUTO_CHECKPOINT": "false",
+    "BILINC_API_KEY": "bil_live_test_key",
+    "APP_ACCESS_TOKEN": "correct-horse-battery-staple"
+  }
+}

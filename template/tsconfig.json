@@ -1,0 +1,7 @@
+{
+  "extends": "agents/tsconfig",
+  "compilerOptions": {
+    "types": ["node", "@cloudflare/workers-types", "vite/client", "@cloudflare/vitest-pool-workers/types"]
+  },
+  "include": ["src", "test", "env.d.ts", "vite.config.ts", "vitest.config.ts"]
+}
