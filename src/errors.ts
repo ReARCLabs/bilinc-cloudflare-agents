@@ -39,6 +39,8 @@ export const NOTICES = {
   unavailable: "Bilinc memory is unavailable right now",
   runPreviewFirst: "run the preview first",
   olderCheckpoints: "older checkpoints may exist; call again with a larger limit (max 100)",
+  /** A full list at the maximum limit: a larger limit is not possible, and the list has no cursor. */
+  olderCheckpointsNotListed: "older checkpoints may exist but are not listed: this list shows at most the newest 100",
 } as const;
 
 /** `input rejected: <field>` or `input rejected: <field> (<reason>)`. */

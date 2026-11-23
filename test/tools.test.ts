@@ -21,6 +21,7 @@ const CHECKPOINT_NOT_FOUND = "checkpoint not found; call bilinc_checkpoints to l
 const NO_CHECKPOINTS =
   "No checkpoints exist yet, so there is nothing to diff against or roll back to. Use bilinc_history to read earlier values of an entry, or bilinc_checkpoint to create a checkpoint now.";
 const MORE = "older checkpoints may exist; call again with a larger limit (max 100)";
+const OLDER_NOT_LISTED = "older checkpoints may exist but are not listed: this list shows at most the newest 100";
 const PICK =
   "If you do not have a checkpoint id, call bilinc_checkpoints first. Pick the checkpoint made before the change you want to inspect or undo; the newest one is not always the right one.";
 
@@ -137,6 +138,15 @@ describe("bilinc_checkpoints", () => {
     expect(m.sent.map((r) => r.url)).toEqual([`${API}/memory/snapshots?limit=3`, `${API}/memory/snapshots?limit=4`]);
     expect(full.more).toBe(MORE);
     expect("more" in notFull).toBe(false);
+  });
+
+  it("at the maximum limit of 100, a full list says older checkpoints are not listed instead of asking for a larger limit", async () => {
+    const hundred = ok({ snapshots: Array.from({ length: 100 }, (_, i) => snapshot(`s${i}`, `c${i}`)) });
+    mockFetch(hundred);
+    const result = await run<{ more?: string; checkpoints: unknown[] }>(setup().tools, "bilinc_checkpoints", { limit: 100 });
+    expect(result.checkpoints).toHaveLength(100);
+    expect(result.more).toBe(OLDER_NOT_LISTED);
+    expect(result.more).not.toContain("larger limit");
   });
 
   it("caps labels at 128 characters", async () => {

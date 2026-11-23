@@ -157,7 +157,9 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
               createdAt: s.createdAt,
               totalEntries: s.totalEntries,
             })),
-            ...(snapshots.length === wanted ? { more: NOTICES.olderCheckpoints } : {}),
+            ...(snapshots.length === wanted
+              ? { more: wanted < SNAPSHOT_LIST_MAX ? NOTICES.olderCheckpoints : NOTICES.olderCheckpointsNotListed }
+              : {}),
           };
         } catch (error) {
           return noticeFor(error, "listSnapshots");

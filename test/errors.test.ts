@@ -105,6 +105,7 @@ describe("noticeFor: the messages table", () => {
       "No checkpoints exist yet, so there is nothing to diff against or roll back to. Use bilinc_history to read earlier values of an entry, or bilinc_checkpoint to create a checkpoint now.",
     );
     expect(NOTICES.olderCheckpoints).toBe("older checkpoints may exist; call again with a larger limit (max 100)");
+    expect(NOTICES.olderCheckpointsNotListed).toBe("older checkpoints may exist but are not listed: this list shows at most the newest 100");
     expect(inputRejected("label")).toBe("input rejected: label");
     expect(inputRejected("reason", "reserved_reason")).toBe("input rejected: reason (reserved_reason)");
   });
