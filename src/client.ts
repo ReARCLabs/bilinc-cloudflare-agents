@@ -317,8 +317,9 @@ export function createClient(config: ClientConfig): BilincClient {
         await sleep(READ_BACKOFF_MS[attempts - 1] ?? 0);
         continue;
       }
-      const inFlight = isObj(failure.details) && failure.details.inFlight === true;
-      if (cls === "write" && !repeated && failure.kind === "json_error" && failure.code === "idempotency_conflict" && inFlight) {
+      const inFlight =
+        failure.kind === "json_error" && failure.code === "idempotency_conflict" && isObj(failure.details) && failure.details.inFlight === true;
+      if (cls === "write" && !repeated && inFlight) {
         repeated = true;
         await sleep(INFLIGHT_REPEAT_DELAY_MS);
         continue;
@@ -331,7 +332,8 @@ export function createClient(config: ClientConfig): BilincClient {
           code: failure.code,
           status: failure.status,
           retryable: cls === "write" ? false : isReadRetryable(failure),
-          outcomeUnknown: cls === "write" && hasNoDefiniteAnswer(failure),
+          // Still in flight after the one repeat: the original request may yet be applied.
+          outcomeUnknown: cls === "write" && (hasNoDefiniteAnswer(failure) || inFlight),
           ...(failure.requestId !== undefined ? { requestId: failure.requestId } : {}),
           ...(failure.details !== undefined ? { details: failure.details } : {}),
         }),

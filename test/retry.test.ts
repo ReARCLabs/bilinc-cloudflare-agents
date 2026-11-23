@@ -154,13 +154,18 @@ describe("writes", () => {
     expect(m.sent[1]?.body).toEqual(m.sent[0]?.body);
   });
 
-  it("still in flight after the one repeat: busy, no third request", async () => {
+  it("still in flight after the one repeat: outcome unknown (the original may still complete), no third request", async () => {
     const m = mockFetch(apiError(409, "idempotency_conflict", { inFlight: true }));
     const p = settle(makeClient().client.createSnapshot({ label: "x" }));
     await vi.advanceTimersByTimeAsync(10_000);
     const r = await p;
     expect(m.fn).toHaveBeenCalledTimes(2);
-    expect(r.ok === false && noticeFor(r.error, "createSnapshot")).toBe(NOTICES.busy);
+    expect(r.ok === false && (r.error as { code: string; outcomeUnknown: boolean; retryable: boolean })).toMatchObject({
+      code: "idempotency_conflict",
+      outcomeUnknown: true,
+      retryable: false,
+    });
+    expect(r.ok === false && noticeFor(r.error, "createSnapshot")).toBe(NOTICES.outcomeUnknown);
   });
 
   it("idempotency_conflict without inFlight is not repeated", async () => {
