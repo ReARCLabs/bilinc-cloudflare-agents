@@ -443,6 +443,42 @@ describe("bilinc_rollback", () => {
     expect(onMemoryChanged).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["missing_api_key", 401],
+    ["invalid_api_key", 401],
+    ["payment_required", 402],
+    ["entitlement_inactive", 403],
+    ["capability_not_entitled", 403],
+    ["rate_limited", 429],
+  ])("%s is refused before Bilinc spends the token: the preview is kept", async (code, status) => {
+    const { tools, map, previewId, onMemoryChanged } = await previewThen(apiError(status, code));
+    expect(await run(tools, "bilinc_rollback", { previewId })).not.toBe("run the preview first");
+    expect(map.has(PREVIEW_PREFIX + previewId)).toBe(true);
+    expect(onMemoryChanged).not.toHaveBeenCalled();
+  });
+
+  it("a kept preview can be approved again, and the retry sends the same stored token", async () => {
+    const { tools, map, sent, previewId } = await previewThen(
+      apiError(403, "capability_not_entitled"),
+      ok({ snapshotId: "snap_20261123_c3", counts: { created: 0, updated: 1, deleted: 0 } }),
+    );
+    expect(await run(tools, "bilinc_rollback", { previewId })).toBe("not available on this Bilinc plan");
+    expect(await run(tools, "bilinc_rollback", { previewId })).toMatchObject({ rolledBack: true });
+    expect(sent.map((r) => (r.body as { confirmationToken?: string }).confirmationToken)).toEqual([undefined, TOKEN, TOKEN]);
+    expect(map.size).toBe(0);
+  });
+
+  it.each([
+    ["snapshot_not_found", 404],
+    ["invalid_request", 400],
+    ["version_conflict", 409],
+    ["secret_detected", 422],
+  ])("%s can arrive after Bilinc spent the token: the preview is gone", async (code, status) => {
+    const { tools, map, previewId } = await previewThen(apiError(status, code));
+    await run(tools, "bilinc_rollback", { previewId });
+    expect(map.size).toBe(0);
+  });
+
   it("a sent attempt with no definite answer deletes the preview", async () => {
     const { tools, map, previewId } = await previewThen(reject);
     expect(await run(tools, "bilinc_rollback", { previewId })).toBe("outcome unknown; check history before trying again");
