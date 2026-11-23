@@ -171,7 +171,14 @@ describe("bilinc_diff", () => {
       modified: ["favorite-color"],
       removed: ["old-fact"],
       truncated: false,
+      countsComplete: true,
     });
+  });
+
+  it("marks the counts partial when Bilinc cut the key lists short (its own counts are project-wide)", async () => {
+    mockFetch(json(200, { ...diffFixture, counts: { added: 900, modified: 2, removed: 1 }, truncated: true }));
+    const result = await run<Record<string, unknown>>(setup().tools, "bilinc_diff", { snapshotId: "snap_20261123_a1" });
+    expect(result).toMatchObject({ counts: { added: 1, modified: 1, removed: 1 }, truncated: true, countsComplete: false });
   });
 
   it("an id that fails the pattern returns 'checkpoint not found' and sends nothing", async () => {

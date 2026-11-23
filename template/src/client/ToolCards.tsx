@@ -20,6 +20,8 @@ export interface DiffResult {
   modified: string[];
   removed: string[];
   truncated: boolean;
+  /** False when the lists were cut short: the counts then only count the listed keys. */
+  countsComplete?: boolean;
 }
 
 export function toolName(part: ToolUIPart): string {
@@ -96,7 +98,9 @@ export function ToolCard({ part }: { part: ToolUIPart }) {
         <KeyList title="Added" keys={output.added} />
         <KeyList title="Modified" keys={output.modified} />
         <KeyList title="Removed" keys={output.removed} />
-        {output.truncated && <p className="note">The lists are cut short; the counts are complete.</p>}
+        {(output.truncated || output.countsComplete === false) && (
+          <p className="note">The lists are cut short, so the counts are too: there may be more changes.</p>
+        )}
       </div>
     );
   }

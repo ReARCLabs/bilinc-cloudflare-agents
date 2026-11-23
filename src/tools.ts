@@ -122,7 +122,7 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
     }),
 
     bilinc_diff: tool({
-      description: `Show which memory entries were added, modified or removed since a checkpoint (keys only, no values). Free. ${PICK_CHECKPOINT}`,
+      description: `Show which memory entries were added, modified or removed since a checkpoint (keys only, no values). When countsComplete is false the lists were cut short and the counts only count the listed keys. Free. ${PICK_CHECKPOINT}`,
       inputSchema: z.object({
         snapshotId: z.string().describe("Checkpoint id from bilinc_checkpoint or bilinc_checkpoints"),
       }),
@@ -133,6 +133,8 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
           const added = own(diff.added);
           const modified = own(diff.modified);
           const removed = own(diff.removed);
+          // Bilinc's own counts are project-wide (other namespaces too), so they cannot replace these; when it cut
+          // the lists short, these counts only count the listed keys.
           return {
             snapshotId,
             counts: { added: added.length, modified: modified.length, removed: removed.length },
@@ -140,6 +142,7 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
             modified,
             removed,
             truncated: diff.truncated,
+            countsComplete: !diff.truncated,
           };
         } catch (error) {
           return noticeFor(error, "diff");

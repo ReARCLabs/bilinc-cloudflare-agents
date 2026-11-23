@@ -176,6 +176,19 @@ describe("ToolCard", () => {
     expect(screen.getByText("favourite-colour")).toBeTruthy();
   });
 
+  it("says the diff counts are partial when the lists were cut short", () => {
+    const diffPart = {
+      type: "tool-bilinc_diff",
+      toolCallId: "d2",
+      state: "output-available",
+      input: { snapshotId: "snap_1" },
+      output: { snapshotId: "snap_1", counts: { added: 1, modified: 0, removed: 0 }, added: ["a"], modified: [], removed: [], truncated: true, countsComplete: false },
+    } as unknown as ToolUIPart;
+    const { container } = render(<ToolCard part={diffPart} />);
+    expect(container.textContent).not.toMatch(/counts are complete/);
+    expect(screen.getByText(/cut short, so the counts are too/)).toBeTruthy();
+  });
+
   it("shows a notice string as text and ignores other tools", () => {
     const notice = { ...(previewPart as object), output: "checkpoint not found; call bilinc_checkpoints to list the ids that exist" } as unknown as ToolUIPart;
     render(<ToolCard part={notice} />);
