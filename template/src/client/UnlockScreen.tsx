@@ -3,6 +3,7 @@ import { MIN_ACCESS_TOKEN_LENGTH, TOKEN_TOO_SHORT_TEXT } from "../constants";
 import { unlock, type GateState } from "./api";
 
 export const WRONG_PASSPHRASE_TEXT = "That passphrase is not right.";
+export const NETWORK_ERROR_TEXT = "Could not reach the agent. Check your connection and try again.";
 export const tooManyAttemptsText = (seconds?: number) =>
   `Too many wrong attempts from this network. Try again in ${seconds ?? 600} seconds.`;
 
@@ -10,12 +11,14 @@ export function UnlockScreen(p: { gate: GateState; retryAfterSeconds?: number; o
   const [gate, setGate] = useState<GateState>(p.gate);
   const [retryAfter, setRetryAfter] = useState(p.retryAfterSeconds);
   const [wrong, setWrong] = useState(false);
+  const [networkError, setNetworkError] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const input = event.currentTarget.elements.namedItem("passphrase") as HTMLInputElement;
     setBusy(true);
+    setNetworkError(false);
     try {
       const result = await unlock(input.value);
       if (result.ok) return p.onUnlocked();
@@ -23,6 +26,8 @@ export function UnlockScreen(p: { gate: GateState; retryAfterSeconds?: number; o
       setRetryAfter(result.retryAfterSeconds);
       setWrong(result.gate === "locked");
       input.value = "";
+    } catch {
+      setNetworkError(true);
     } finally {
       setBusy(false);
     }
@@ -48,8 +53,9 @@ export function UnlockScreen(p: { gate: GateState; retryAfterSeconds?: number; o
           Unlock
         </button>
       </form>
-      {gate === "too_many_attempts" && <p className="error">{tooManyAttemptsText(retryAfter)}</p>}
-      {gate !== "too_many_attempts" && wrong && <p className="error">{WRONG_PASSPHRASE_TEXT}</p>}
+      {networkError && <p className="error">{NETWORK_ERROR_TEXT}</p>}
+      {!networkError && gate === "too_many_attempts" && <p className="error">{tooManyAttemptsText(retryAfter)}</p>}
+      {!networkError && gate !== "too_many_attempts" && wrong && <p className="error">{WRONG_PASSPHRASE_TEXT}</p>}
     </main>
   );
 }

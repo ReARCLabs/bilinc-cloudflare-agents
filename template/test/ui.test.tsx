@@ -7,7 +7,7 @@ import { ApprovalCard, NO_PREVIEW_TEXT } from "../src/client/ApprovalCard";
 import { Chat } from "../src/client/Chat";
 import { StatusBanner } from "../src/client/StatusBanner";
 import { ToolCard, type RollbackPreviewResult } from "../src/client/ToolCards";
-import { tooManyAttemptsText, UnlockScreen, WRONG_PASSPHRASE_TEXT } from "../src/client/UnlockScreen";
+import { NETWORK_ERROR_TEXT, tooManyAttemptsText, UnlockScreen, WRONG_PASSPHRASE_TEXT } from "../src/client/UnlockScreen";
 
 const hooks = vi.hoisted(() => ({
   useAgent: vi.fn((options: unknown) => ({ options })),
@@ -104,6 +104,22 @@ describe("UnlockScreen", () => {
     render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
     await submit("wrong-passphrase-0000");
     expect(await screen.findByText(WRONG_PASSPHRASE_TEXT)).toBeTruthy();
+  });
+
+  it("says the agent could not be reached when the request fails, and clears that on the next answer", async () => {
+    mockFetch(() => new Response('{"error":"invalid_passphrase"}', { status: 401 }));
+    render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
+    await submit("wrong-passphrase-0000");
+    expect(await screen.findByText(WRONG_PASSPHRASE_TEXT)).toBeTruthy();
+    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("Failed to fetch"))));
+    await submit("correct-horse-battery-staple");
+    expect(await screen.findByText(NETWORK_ERROR_TEXT)).toBeTruthy();
+    await waitFor(() => expect((screen.getByRole("button", { name: "Unlock" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.queryByText(WRONG_PASSPHRASE_TEXT)).toBeNull();
+    mockFetch(() => new Response('{"error":"invalid_passphrase"}', { status: 401 }));
+    await submit("wrong-passphrase-0000");
+    expect(await screen.findByText(WRONG_PASSPHRASE_TEXT)).toBeTruthy();
+    expect(screen.queryByText(NETWORK_ERROR_TEXT)).toBeNull();
   });
 
   it("shows the wait after a 429 and the too-short text after a 503", async () => {
