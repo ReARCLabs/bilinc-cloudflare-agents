@@ -1,0 +1,47 @@
+:root {
+  --bg: #f7f7f5;
+  --fg: #1d1d1b;
+  --muted: #6b6b66;
+  --card: #ffffff;
+  --border: #dcdcd6;
+  --accent: #2b59c3;
+  --warn-bg: #fff4d6;
+  --error: #b42318;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151513;
+    --fg: #ececea;
+    --muted: #a3a39d;
+    --card: #1f1f1c;
+    --border: #3a3a35;
+    --accent: #8fb0ff;
+    --warn-bg: #3a3116;
+    --error: #ff8a80;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+main, .chat { max-width: 760px; margin: 0 auto; padding: 16px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+h1 { font-size: 1.25rem; margin: 0; }
+button { font: inherit; padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--fg); cursor: pointer; }
+button:disabled { opacity: 0.5; cursor: default; }
+input { font: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--fg); min-width: 0; }
+form { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+form input { flex: 1; }
+.banner { padding: 10px 16px; background: var(--warn-bg); display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.banner a { color: var(--accent); }
+.unlock label { display: block; width: 100%; }
+.error { color: var(--error); }
+.messages { list-style: none; padding: 0; margin: 16px 0 0; }
+.message { padding: 8px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.message.user { color: var(--muted); }
+.tool-name { font-size: 0.8rem; color: var(--muted); }
+.card { border: 1px solid var(--border); background: var(--card); border-radius: 8px; padding: 10px 12px; margin: 6px 0; }
+.card.approval { border-color: var(--accent); }
+.card ul { margin: 4px 0; padding-left: 20px; }
+.note { font-size: 0.85rem; color: var(--muted); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.actions input { flex: 1; }

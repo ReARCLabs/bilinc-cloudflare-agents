@@ -1,4 +1,10 @@
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { App } from "./client/App";
+import "./client/styles.css";
 
-// Stub so the client builds; Task 13 replaces it.
-createRoot(document.getElementById("root")!).render(<p>Bilinc agent</p>);
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);
