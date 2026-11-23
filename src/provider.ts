@@ -47,10 +47,11 @@ function ownSuffix(key: string, prefix: string): string | null {
 }
 
 function renderHit(hit: RecallHit, suffix: string): string {
-  const version = hit.entryVersion === null ? "unknown" : stripDelimiters(hit.entryVersion).replace(/\s+/g, "");
+  const version = hit.entryVersion === null ? "" : stripDelimiters(hit.entryVersion).replace(/\s+/g, "");
   const updated = hit.updatedAt === null ? "unknown" : hit.updatedAt.slice(0, 10);
   const value = stripDelimiters(hit.value).slice(0, MAX_VALUE_CHARS);
-  return `<<<entry key=${suffix} v=${version} updated=${updated}\n${value}\n>>>`;
+  // No v= without a version: bilinc_forget takes the v= value as expectedVersion, and a placeholder would never match.
+  return `<<<entry key=${suffix}${version ? ` v=${version}` : ""} updated=${updated}\n${value}\n>>>`;
 }
 
 function renderHits(hits: { hit: RecallHit; suffix: string }[], maxChars: number): string {

@@ -264,9 +264,12 @@ describe("search()", () => {
     expect(text.match(/<<<entry/g)).toHaveLength(2);
   });
 
-  it("prints unknown for a missing version or date", async () => {
-    mockFetch(ok({ results: [hit("cf.default.a", "A", { entry_version: null, updated_at: null })] }));
-    expect(await setup().provider.search("q")).toContain("<<<entry key=a v=unknown updated=unknown");
+  it("leaves out v= for a missing or empty version (nothing to pass to bilinc_forget) and prints unknown for a missing date", async () => {
+    mockFetch(ok({ results: [hit("cf.default.a", "A", { entry_version: null, updated_at: null }), hit("cf.default.b", "B", { entry_version: "<<<>>> " })] }));
+    const text = await setup().provider.search("q");
+    expect(text).toContain("<<<entry key=a updated=unknown\nA\n>>>");
+    expect(text).toContain("<<<entry key=b updated=2025-11-23\nB\n>>>");
+    expect(text).not.toContain("v=");
   });
 
   it("returns a notice instead of throwing, after exactly one request", async () => {

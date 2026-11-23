@@ -255,6 +255,16 @@ describe("bilinc_forget", () => {
     expect(onMemoryChanged).not.toHaveBeenCalled();
   });
 
+  it("ignores an expectedVersion of 'unknown' or blank, so a missing version never causes an endless version_conflict", async () => {
+    const m = mockFetch(ok({ key: "cf.default.a", removed: true }), ok({ key: "cf.default.a", removed: true }), apiError(409, "version_conflict"));
+    const { tools } = setup();
+    expect(await run(tools, "bilinc_forget", { key: "a", reason: "r", expectedVersion: "unknown" })).toEqual({ forgotten: true, key: "a" });
+    expect(await run(tools, "bilinc_forget", { key: "a", reason: "r", expectedVersion: "  " })).toEqual({ forgotten: true, key: "a" });
+    expect(m.sent.map((r) => (r.body as Record<string, unknown>).expectedVersion)).toEqual([undefined, undefined]);
+    expect(await run(tools, "bilinc_forget", { key: "a", reason: "r", expectedVersion: " UNKNOWN " })).toBe("request conflict");
+    expect((m.sent[2]?.body as Record<string, unknown>).expectedVersion).toBeUndefined();
+  });
+
   it("removed: false returns 'not found' and does not refresh", async () => {
     const onMemoryChanged = vi.fn(() => Promise.resolve());
     mockFetch(ok({ key: "cf.default.gone", removed: false }));

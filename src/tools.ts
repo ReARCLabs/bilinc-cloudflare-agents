@@ -48,6 +48,12 @@ function isStoredPreview(value: unknown): value is StoredPreview {
   return typeof v.snapshotId === "string" && typeof v.confirmationToken === "string" && typeof v.reason === "string" && typeof v.expiresAt === "number";
 }
 
+/** The version to check on forget, or undefined: a blank value or the "unknown" placeholder is not a version. */
+function versionToCheck(expectedVersion: string | undefined): string | undefined {
+  const trimmed = expectedVersion?.trim();
+  return !trimmed || trimmed.toLowerCase() === "unknown" ? undefined : trimmed;
+}
+
 /** True when the client stopped before fetch, so Bilinc never saw the request. */
 function neverSent(error: unknown): boolean {
   return isBilincError(error) && error.status === 0 && (error.code === "circuit_open" || error.code === "rate_capped" || error.code === "invalid_request");
@@ -176,8 +182,9 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
         expectedVersion: z.string().max(MAX_EXPECTED_VERSION_CHARS).optional().describe("The v= value from search results"),
       }),
       needsApproval: true,
-      execute: async ({ key, reason, expectedVersion }) => {
+      execute: async ({ key, reason, expectedVersion: rawVersion }) => {
         if (!SDK_KEY_RE.test(key)) return NOTICES.notFound;
+        const expectedVersion = versionToCheck(rawVersion);
         try {
           const result = await client.forget({ key: prefix + key, reason, ...(expectedVersion !== undefined ? { expectedVersion } : {}) });
           if (!result.removed) return NOTICES.notFound;
