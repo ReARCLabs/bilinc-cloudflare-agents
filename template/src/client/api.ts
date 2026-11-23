@@ -18,7 +18,10 @@ export async function fetchHealth(): Promise<{ gate: GateState; state?: BilincHe
   return { gate: "unlocked", state: isHealthState(body?.state) ? body.state : undefined };
 }
 
-export async function unlock(passphrase: string): Promise<{ ok: boolean; gate: GateState; retryAfterSeconds?: number }> {
+export type UnlockResult = { ok: boolean; gate: GateState; retryAfterSeconds?: number; serverError?: true };
+
+/** Only a 401 means the passphrase was wrong; any other unexpected status is the agent's error (`serverError`). */
+export async function unlock(passphrase: string): Promise<UnlockResult> {
   const res = await fetch("/api/unlock", {
     method: "POST",
     credentials: "same-origin",
@@ -31,5 +34,6 @@ export async function unlock(passphrase: string): Promise<{ ok: boolean; gate: G
     const retryAfterSeconds = Number(res.headers.get("Retry-After"));
     return { ok: false, gate: "too_many_attempts", retryAfterSeconds: Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : undefined };
   }
-  return { ok: false, gate: "locked" };
+  if (res.status === 401) return { ok: false, gate: "locked" };
+  return { ok: false, gate: "locked", serverError: true };
 }

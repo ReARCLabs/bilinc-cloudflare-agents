@@ -7,7 +7,7 @@ import { ApprovalCard, NO_PREVIEW_TEXT } from "../src/client/ApprovalCard";
 import { Chat } from "../src/client/Chat";
 import { StatusBanner } from "../src/client/StatusBanner";
 import { ToolCard, type RollbackPreviewResult } from "../src/client/ToolCards";
-import { NETWORK_ERROR_TEXT, tooManyAttemptsText, UnlockScreen, WRONG_PASSPHRASE_TEXT } from "../src/client/UnlockScreen";
+import { NETWORK_ERROR_TEXT, SERVER_ERROR_TEXT, tooManyAttemptsText, UnlockScreen, WRONG_PASSPHRASE_TEXT } from "../src/client/UnlockScreen";
 
 const hooks = vi.hoisted(() => ({
   useAgent: vi.fn((options: unknown) => ({ options })),
@@ -120,6 +120,22 @@ describe("UnlockScreen", () => {
     await submit("wrong-passphrase-0000");
     expect(await screen.findByText(WRONG_PASSPHRASE_TEXT)).toBeTruthy();
     expect(screen.queryByText(NETWORK_ERROR_TEXT)).toBeNull();
+  });
+
+  it("says the agent answered with an error, not that the passphrase is wrong, after a 500, 400 or 405", async () => {
+    for (const status of [500, 400, 405]) {
+      mockFetch(() => new Response('{"error":"internal"}', { status }));
+      render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
+      await submit("correct-horse-battery-staple");
+      expect(await screen.findByText(SERVER_ERROR_TEXT)).toBeTruthy();
+      expect(screen.queryByText(WRONG_PASSPHRASE_TEXT)).toBeNull();
+      expect((screen.getByLabelText("Passphrase") as HTMLInputElement).value).toBe("correct-horse-battery-staple");
+      mockFetch(() => new Response('{"error":"invalid_passphrase"}', { status: 401 }));
+      await submit("wrong-passphrase-0000");
+      expect(await screen.findByText(WRONG_PASSPHRASE_TEXT)).toBeTruthy();
+      expect(screen.queryByText(SERVER_ERROR_TEXT)).toBeNull();
+      cleanup();
+    }
   });
 
   it("shows the wait after a 429 and the too-short text after a 503", async () => {
