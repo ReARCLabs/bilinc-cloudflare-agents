@@ -2,7 +2,8 @@
 // Pre-publish gate for bilinc-cloudflare-agents (spec: "Unverified > Checked at the pre-publish gate": G5, G6, G7, G10).
 // G5 includes the deployed sidecar version: the status.runtime-version check prints it and stores it in the report.
 // Runs every BilincClient call against production Bilinc with a key from a DEDICATED test account.
-// It spends about 11 credits on that account and runs a project-wide rollback, so it refuses a project that already holds entries.
+// It spends about 11 credits on that account and runs a project-wide rollback, so it refuses a project that already holds entries,
+// or a checkpoint that an earlier gate run did not make.
 // Usage: BILINC_GATE_API_KEY=... node scripts/gate.mjs <report.json> [--wait-expiry] [--allow-nonempty]
 import { randomBytes } from 'node:crypto';
 import { realpathSync, writeFileSync } from 'node:fs';
@@ -16,6 +17,9 @@ export const CREDIT_SETTLE_DELAY_MS = 1_500;
 
 const ALNUM = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 const SNAPSHOT_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
+// Every run leaves one checkpoint labelled with this prefix: Bilinc has no call that deletes a checkpoint.
+const CHECKPOINT_LABEL_PREFIX = 'gate: before change ';
+const SNAPSHOT_LIST_MAX = 100;
 const CAPABILITIES = ['commit', 'recall', 'forget', 'snapshots', 'diff', 'rollback', 'history', 'list'];
 
 export function randomAlnum(length) {
@@ -158,8 +162,17 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
     );
     check('status.recallProfiles', 'G5', ['fast', 'balanced'].every((profile) => status.recallProfiles.includes(profile)), status.recallProfiles.join(','));
     if (!allowNonEmpty) {
-      const existing = await client.listSnapshots({ limit: 20 });
-      check('snapshots.empty', 'G6', existing.length === 0, `${existing.length} checkpoints before the run`);
+      const existing = await client.listSnapshots({ limit: SNAPSHOT_LIST_MAX });
+      const earlier = existing.filter((snapshot) => snapshot.label?.startsWith(CHECKPOINT_LABEL_PREFIX) === true).length;
+      const other = existing.length - earlier;
+      const full = existing.length >= SNAPSHOT_LIST_MAX;
+      check(
+        'snapshots.empty',
+        'G6',
+        other === 0 && !full,
+        `${other} other checkpoints before the run, ${earlier} from earlier gate runs` +
+          (full ? '; the list is full, so older checkpoints were not checked' : ''),
+      );
     }
 
     const fact = `${prefix}gate-${runId}-fact`;
@@ -181,7 +194,7 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
       first.error === undefined ? `entryVersion ${String(first.value.entryVersion)}` : describeError(first.error),
     );
 
-    const label = `gate: before change ${runId}`;
+    const label = `${CHECKPOINT_LABEL_PREFIX}${runId}`;
     const created = await measured('createSnapshot', 2, () => client.createSnapshot({ label }));
     const snapshotId = created.value?.id;
     check(
