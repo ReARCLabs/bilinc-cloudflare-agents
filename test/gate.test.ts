@@ -286,6 +286,9 @@ describe('runGate against a fake Bilinc', () => {
       expect(report.results.find((result) => result.id === 'snapshots.empty')?.detail).toBe(
         '1 other checkpoints before the run, 1 from earlier gate runs',
       );
+      // The run stops there: no write, no checkpoint, no rollback on a project it does not own.
+      expect(report.results.at(-1)?.id).toBe('snapshots.empty');
+      expect((await fake.bilinc.client.listSnapshots({ limit: 100 })).length).toBe(2);
       const allowed = await runGate({ bilinc: fake.bilinc, runId: 'r8c', sleep: fake.sleep, log: quiet, allowNonEmpty: true });
       expect(failedIds(allowed)).toEqual([]);
     }

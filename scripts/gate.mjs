@@ -175,6 +175,7 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
         `${other} other checkpoints before the run, ${earlier} from earlier gate runs` +
           (full ? '; the list is full, so older checkpoints were not checked' : ''),
       );
+      if (other > 0) return finish();
     }
 
     const fact = `${prefix}gate-${runId}-fact`;
