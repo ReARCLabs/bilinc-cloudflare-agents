@@ -1,0 +1,73 @@
+{
+  "name": "bilinc-cloudflare-agents",
+  "version": "0.1.0",
+  "description": "Versioned memory for Cloudflare Agents: a Bilinc context provider for Think, with history, checkpoints, diff and rollback.",
+  "type": "module",
+  "license": "MIT",
+  "author": "ReARC Labs Inc.",
+  "homepage": "https://bilinc.space/?utm_source=npm&utm_medium=package&utm_campaign=bilinc-cloudflare-agents",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools.d.ts",
+      "import": "./dist/tools.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "cloudflare-agents",
+    "think",
+    "context-provider",
+    "agent-memory",
+    "bilinc"
+  ],
+  "engines": {
+    "node": ">=20.3"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "peerDependencies": {
+    "agents": ">=0.34.0 <1",
+    "ai": "^7.0.0",
+    "zod": "^4.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.23.0",
+    "@cloudflare/workers-types": "^5.20260815.1",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.6",
+    "agents": "0.34.0",
+    "ai": "^7.0.179",
+    "eslint": "^10.15.0",
+    "tsup": "^9.0.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.74.0",
+    "vitest": "^4.1.0",
+    "zod": "^4.6.7"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ReARCLabs/bilinc-cloudflare-agents.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ReARCLabs/bilinc-cloudflare-agents/issues"
+  }
+}
