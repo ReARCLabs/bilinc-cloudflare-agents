@@ -34,6 +34,8 @@ export declare function randomAlnum(length: number): string;
 export declare function secretSamples(): { assignment: string; providerShaped: string };
 export declare function shapeOf(body: unknown): Shape;
 export declare function installShapeRecorder(target?: { fetch: typeof fetch }): { shapes: RecordedShape[]; restore(): void };
+/** Writes the report as JSON, readable by its owner only, also when a file is already at that path. */
+export declare function writeReport(reportPath: string, body: unknown): void;
 export declare function runGate(options: {
   bilinc: { client: BilincClient; prefix: string };
   runId: string;

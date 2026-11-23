@@ -6,7 +6,7 @@
 // or a checkpoint that an earlier gate run did not make. A run that ends early forgets the keys it wrote (best effort).
 // Usage: BILINC_GATE_API_KEY=... node scripts/gate.mjs <report.json> [--wait-expiry] [--allow-nonempty]
 import { randomBytes } from 'node:crypto';
-import { realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 export const GATE_NAMESPACE = 'gate';
@@ -99,6 +99,20 @@ export function abortDetail(error) {
   const name = error instanceof Error ? error.name : 'Error';
   const message = error instanceof Error ? error.message : String(error);
   return `${name}: ${message.replace(/\bbil_[A-Za-z0-9_-]+/g, '[redacted]').replace(/\s+/g, ' ').slice(0, 200)}`;
+}
+
+// writeFileSync's mode applies only when it creates the file, so an existing report would keep its old,
+// possibly world-readable mode. A fresh file made only for this write, then renamed over the path, never does.
+export function writeReport(reportPath, body) {
+  const temp = `${reportPath}.${randomAlnum(12)}.tmp`;
+  try {
+    writeFileSync(temp, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+    chmodSync(temp, 0o600);
+    renameSync(temp, reportPath);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
 }
 
 export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defaultLog, waitForExpiry = false, allowNonEmpty = false }) {
@@ -434,7 +448,7 @@ async function main(argv) {
     recorder.restore();
   }
   const body = { runId, finishedAt: new Date().toISOString(), ok: report.ok, results: report.results, shapes: recorder.shapes };
-  writeFileSync(reportPath, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
+  writeReport(reportPath, body);
   const failed = report.results.filter((result) => !result.ok).map((result) => result.id);
   console.log(failed.length === 0 ? `GATE PASS (${report.results.length} checks)` : `GATE FAIL: ${failed.join(', ')}`);
   process.exitCode = failed.length === 0 ? 0 : 1;

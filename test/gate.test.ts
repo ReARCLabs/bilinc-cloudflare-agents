@@ -1,8 +1,11 @@
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BilincClient, DiffResult, RollbackPreview } from '../src/index';
-import { installShapeRecorder, runGate, secretSamples } from '../scripts/gate.mjs';
+import { installShapeRecorder, runGate, secretSamples, writeReport } from '../scripts/gate.mjs';
 
 class FakeBilincError extends Error {
   readonly code: string;
@@ -470,6 +473,27 @@ describe('installShapeRecorder', () => {
     ]);
     expect(JSON.stringify(recorder.shapes)).not.toContain('stored text 123');
     expect(globalThis.fetch).toBe(stub);
+  });
+});
+
+describe('writeReport', () => {
+  it.runIf(process.platform !== 'win32')('leaves the report readable by its owner only, also when it replaces an existing world-readable file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gate-report-'));
+    try {
+      const fresh = join(dir, 'new.json');
+      writeReport(fresh, { ok: true });
+      expect(statSync(fresh).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(readFileSync(fresh, 'utf8'))).toEqual({ ok: true });
+
+      const existing = join(dir, 'existing.json');
+      writeFileSync(existing, 'old', { mode: 0o644 });
+      expect(statSync(existing).mode & 0o777).toBe(0o644);
+      writeReport(existing, { ok: false });
+      expect(statSync(existing).mode & 0o777).toBe(0o600);
+      expect(readFileSync(existing, 'utf8')).toBe(`${JSON.stringify({ ok: false }, null, 2)}\n`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
