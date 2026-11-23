@@ -27,6 +27,8 @@ function store(): BilincToolStore {
     get: <T>(k: string) => Promise.resolve(map.get(k) as T | undefined),
     put: (k: string, v: unknown) => Promise.resolve(void map.set(k, v)),
     delete: (k: string) => Promise.resolve(map.delete(k)),
+    list: <T>({ prefix }: { prefix: string }) =>
+      Promise.resolve(new Map([...map].filter(([k]) => k.startsWith(prefix)) as [string, T][])),
   };
 }
 

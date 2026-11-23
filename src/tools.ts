@@ -26,6 +26,8 @@ export interface BilincToolStore {
   get<T>(k: string): Promise<T | undefined>;
   put(k: string, v: unknown): Promise<void>;
   delete(k: string): Promise<unknown>;
+  /** Used to sweep expired rollback previews. */
+  list<T>(options: { prefix: string }): Promise<Map<string, T>>;
 }
 
 export interface BilincToolsOptions {
@@ -79,7 +81,21 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
     try {
       await store.delete(storeKey);
     } catch {
-      // A preview left behind expires on its own and its token is single-use.
+      // A preview left behind is unusable once expired (bilinc_rollback checks expiresAt), its token is
+      // single-use, and the next bilinc_rollback_preview sweeps it out of the store.
+    }
+  }
+
+  /** Deletes stored previews whose expiry has passed, and malformed ones. Never throws. */
+  async function sweepExpiredPreviews(): Promise<void> {
+    try {
+      const now = Date.now();
+      const stored = await store.list<unknown>({ prefix: ROLLBACK_PREVIEW_STORE_PREFIX });
+      for (const [storeKey, value] of stored) {
+        if (!isStoredPreview(value) || now >= value.expiresAt) await dropPreview(storeKey);
+      }
+    } catch {
+      // A failed sweep leaves expired previews for the next one; the preview itself still works.
     }
   }
 
@@ -213,6 +229,8 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
             reason,
             expiresAt: Number.isFinite(parsed) ? parsed : Date.now() + PREVIEW_FALLBACK_TTL_MS,
           };
+          // Before the put, so the sweep can never remove the preview made now.
+          await sweepExpiredPreviews();
           await store.put(ROLLBACK_PREVIEW_STORE_PREFIX + previewId, stored);
           return {
             previewId,

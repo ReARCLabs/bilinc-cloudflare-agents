@@ -34,6 +34,8 @@ function memoryStore() {
       return Promise.resolve();
     },
     delete: (k: string) => Promise.resolve(map.delete(k)),
+    list: <T>({ prefix }: { prefix: string }) =>
+      Promise.resolve(new Map([...map].filter(([k]) => k.startsWith(prefix)).map(([k, v]) => [k, structuredClone(v) as T]))),
   };
   return { store, map };
 }
@@ -318,6 +320,26 @@ describe("bilinc_rollback_preview", () => {
     const { tools, map } = setup();
     const result = await run<{ previewId: string }>(tools, "bilinc_rollback_preview", { snapshotId: "snap_20261123_c3", reason: "r" });
     expect((map.get(PREVIEW_PREFIX + result.previewId) as { expiresAt: number }).expiresAt).toBe(Date.parse("2026-11-23T12:05:00.000Z"));
+  });
+
+  it("deletes stored previews that have expired (and malformed ones) before it stores a new one", async () => {
+    mockFetch(previewIn(300_000));
+    const { tools, map } = setup();
+    const live = { snapshotId: "s", confirmationToken: "t", reason: "r", expiresAt: Date.now() + 60_000 };
+    map.set(`${PREVIEW_PREFIX}old`, { snapshotId: "s", confirmationToken: "t", reason: "r", expiresAt: Date.now() - 1 });
+    map.set(`${PREVIEW_PREFIX}junk`, "not a preview");
+    map.set(`${PREVIEW_PREFIX}live`, live);
+    map.set("bilinc:autoCheckpoint", "done");
+    const result = await run<{ previewId: string }>(tools, "bilinc_rollback_preview", { snapshotId: "snap_20261123_c3", reason: "r" });
+    expect([...map.keys()].sort()).toEqual(["bilinc:autoCheckpoint", `${PREVIEW_PREFIX}live`, PREVIEW_PREFIX + result.previewId].sort());
+  });
+
+  it("a failing sweep does not fail the preview", async () => {
+    mockFetch(previewIn(300_000));
+    const { tools, store, map } = setup();
+    store.list = () => Promise.reject(new Error("storage down"));
+    const result = await run<{ previewId: string }>(tools, "bilinc_rollback_preview", { snapshotId: "snap_20261123_c3", reason: "r" });
+    expect(map.has(PREVIEW_PREFIX + result.previewId)).toBe(true);
   });
 
   it("an id that fails the pattern returns 'checkpoint not found' and sends nothing", async () => {
