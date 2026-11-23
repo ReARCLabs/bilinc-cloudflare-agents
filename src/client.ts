@@ -100,7 +100,7 @@ class ShapeError extends Error {}
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-// ---- response readers: a wrong shape throws ShapeError, which becomes bad_response ----
+// ---- response readers: a wrong shape throws ShapeError; any throw from a reader becomes bad_response ----
 
 function obj(v: unknown): Record<string, unknown> {
   if (typeof v !== "object" || v === null || Array.isArray(v)) throw new ShapeError();
@@ -120,6 +120,12 @@ const count = (v: unknown): number => (typeof v === "number" && Number.isFinite(
 const numOrNull = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const strings = (v: unknown): string[] => arr(v).filter((x): x is string => typeof x === "string");
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+/** Epoch seconds to ISO, or null when it is not a number or out of Date's range. */
+function isoFromEpochSeconds(v: unknown): string | null {
+  if (typeof v !== "number") return null;
+  const date = new Date(v * 1000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
 
 function snapshotInfo(v: unknown): SnapshotInfo {
   const s = obj(v);
@@ -158,13 +164,12 @@ const map = {
     if (!Array.isArray(b.results)) return [];
     return b.results.flatMap((item): RecallHit[] => {
       if (!isObj(item) || typeof item.key !== "string" || item.value === undefined) return [];
-      const updated = item.updated_at;
       return [
         {
           key: item.key,
           value: typeof item.value === "string" ? item.value : JSON.stringify(item.value),
           entryVersion: strOrNull(item.entry_version),
-          updatedAt: typeof updated === "number" && Number.isFinite(updated) ? new Date(updated * 1000).toISOString() : null,
+          updatedAt: isoFromEpochSeconds(item.updated_at),
           source: strOrNull(item.source),
         },
       ];
@@ -301,14 +306,18 @@ export function createClient(config: ClientConfig): BilincClient {
       const result = await attempt(baseUrl, apiKey, spec);
       let failure: AttemptFailure;
       if (result.ok) {
+        let mapped: { value: T } | undefined;
         try {
-          const value = read(result.body);
-          guard.record({ kind: "reset" });
-          return value;
-        } catch (error) {
-          if (!(error instanceof ShapeError)) throw error;
-          failure = { kind: "bad_shape", code: "bad_response", status: result.status, requestId: result.requestId };
+          mapped = { value: read(result.body) };
+        } catch {
+          // A ShapeError, or anything else a reader throws: the body is not one this client can use.
+          mapped = undefined;
         }
+        if (mapped !== undefined) {
+          guard.record({ kind: "reset" });
+          return mapped.value;
+        }
+        failure = { kind: "bad_shape", code: "bad_response", status: result.status, requestId: result.requestId };
       } else {
         failure = result.failure;
       }

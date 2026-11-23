@@ -131,6 +131,32 @@ describe("wire format per operation", () => {
     expect(await makeClient().client.recall({ query: "a" })).toEqual([]);
   });
 
+  it("recall: an updated_at too large for a Date is updatedAt null, not an error", async () => {
+    mockFetch(ok({ results: [{ key: "cf.default.k", value: "v", entry_version: "ev_1", updated_at: 1e300, source: null }] }));
+    const { client, onError } = makeClient();
+    expect(await client.recall({ query: "a" })).toEqual([{ key: "cf.default.k", value: "v", entryVersion: "ev_1", updatedAt: null, source: null }]);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("any throw while mapping a 2xx body is bad_response: onError once, breaker counts", async () => {
+    const marker = { boom: true };
+    const stringify = JSON.stringify.bind(JSON);
+    vi.spyOn(JSON, "stringify").mockImplementation((value: unknown, ...rest: unknown[]) => {
+      if (typeof value === "object" && value !== null && (value as { boom?: unknown }).boom === true) throw new TypeError("mapper broke");
+      return stringify(value, ...(rest as [undefined, undefined]));
+    });
+    try {
+      mockFetch(ok({ results: [{ key: "cf.default.k", value: marker }] }));
+      const { client, onError, guard } = makeClient();
+      const e = await rejection(client.recall({ query: "a" }));
+      expect(e).toMatchObject({ code: "bad_response", status: 200, outcomeUnknown: false });
+      expect(onError).toHaveBeenCalledExactlyOnceWith(e, "recall");
+      expect(guard.state().failures).toBe(1);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it("recall: a query over 4,096 chars is cut to exactly 4,096 and sent", async () => {
     const m = mockFetch(json(200, recallFixture));
     await makeClient().client.recall({ query: "q".repeat(5000) });
