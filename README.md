@@ -241,7 +241,7 @@ Use one dedicated Bilinc account per deployment. Multi-user apps are not support
 - Changing `BILINC_NAMESPACE` starts from an empty memory; entries under the old namespace stay in Bilinc but are no longer visible to the agent.
 - There is no list of past chats; a chat is reached through its URL.
 - Think's workspace file tools are hidden in the template; if you enable them, `write`, `edit` and `delete` run without approval.
-- Changing the passphrase is the only way to end sessions; the passphrase must be at least 16 characters, and 5 wrong attempts from one IP block that IP for up to 10 minutes.
+- Changing the passphrase is the only way to end sessions; the passphrase must be at least 16 characters, and 5 wrong attempts from one IP block that IP for up to 10 minutes (IPv6 addresses count per /64 network).
 
 ## Compatibility
 

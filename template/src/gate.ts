@@ -16,6 +16,46 @@ export function clientIp(request: Request): string {
   return request.headers.get("CF-Connecting-IP") ?? "unknown";
 }
 
+/** The eight 16-bit groups of an IPv6 address, or null when the text is not one. */
+function ipv6Groups(ip: string): number[] | null {
+  let text = ip.trim().toLowerCase();
+  const zone = text.indexOf("%");
+  if (zone !== -1) text = text.slice(0, zone);
+  if (!text.includes(":")) return null;
+  const lastColon = text.lastIndexOf(":");
+  const tail = text.slice(lastColon + 1);
+  if (tail.includes(".")) {
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(tail);
+    if (!m) return null;
+    const o = m.slice(1).map(Number);
+    if (o.some((n) => n > 255)) return null;
+    text = `${text.slice(0, lastColon + 1)}${((o[0]! << 8) | o[1]!).toString(16)}:${((o[2]! << 8) | o[3]!).toString(16)}`;
+  }
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const split = (part: string) => (part === "" ? [] : part.split(":"));
+  const head = split(halves[0]!);
+  const rest = halves.length === 2 ? split(halves[1]!) : [];
+  if (halves.length === 2 && head.length + rest.length > 7) return null;
+  const parts = halves.length === 2 ? [...head, ...Array<string>(8 - head.length - rest.length).fill("0"), ...rest] : head;
+  if (parts.length !== 8 || !parts.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null;
+  return parts.map((g) => parseInt(g, 16));
+}
+
+/**
+ * The unlock limiter's Durable Object name for a client IP. One IPv6 client usually holds a whole
+ * /64, so IPv6 is keyed on its /64 prefix; an IPv4-mapped address is keyed as that IPv4 address.
+ * IPv4 and anything that does not parse as IPv6 (such as "unknown") are used unchanged.
+ */
+export function limiterKey(ip: string): string {
+  const g = ipv6Groups(ip);
+  if (!g) return ip;
+  if (g.slice(0, 5).every((n) => n === 0) && g[5] === 0xffff) {
+    return [g[6]! >> 8, g[6]! & 0xff, g[7]! >> 8, g[7]! & 0xff].join(".");
+  }
+  return `${g.slice(0, 4).map((n) => n.toString(16)).join(":")}::/64`;
+}
+
 export function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -112,7 +152,7 @@ async function readPassphrase(request: Request): Promise<string | null> {
 }
 
 export async function handleUnlock(request: Request, env: Env): Promise<Response> {
-  const limiter = env.UNLOCK_LIMITER.get(env.UNLOCK_LIMITER.idFromName(clientIp(request)));
+  const limiter = env.UNLOCK_LIMITER.get(env.UNLOCK_LIMITER.idFromName(limiterKey(clientIp(request))));
   const gate = await limiter.attempt();
   if (gate.blocked) {
     return jsonResponse(429, { error: "too_many_attempts" }, { "Retry-After": String(gate.retryAfterSeconds) });
