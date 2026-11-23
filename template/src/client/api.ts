@@ -2,6 +2,9 @@ import type { BilincHealthState } from "bilinc-cloudflare-agents";
 
 export type GateState = "unlocked" | "locked" | "token_too_short" | "too_many_attempts";
 
+/** What one /api/health check found: a gate state, or "failed" when it gave no usable answer. */
+export type HealthCheck = GateState | "failed";
+
 const HEALTH_STATES: readonly BilincHealthState[] = ["ok", "key_missing", "key_invalid", "namespace_invalid", "unreachable"];
 
 function isHealthState(v: unknown): v is BilincHealthState {

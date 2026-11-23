@@ -7,7 +7,15 @@ import { ApprovalCard, NO_PREVIEW_TEXT } from "../src/client/ApprovalCard";
 import { Chat } from "../src/client/Chat";
 import { StatusBanner } from "../src/client/StatusBanner";
 import { ToolCard, type RollbackPreviewResult } from "../src/client/ToolCards";
-import { NETWORK_ERROR_TEXT, SERVER_ERROR_TEXT, tooManyAttemptsText, UnlockScreen, WRONG_PASSPHRASE_TEXT } from "../src/client/UnlockScreen";
+import {
+  NETWORK_ERROR_TEXT,
+  SERVER_ERROR_TEXT,
+  tooManyAttemptsText,
+  UNLOCKED_CHECK_FAILED_TEXT,
+  UNLOCKED_NO_SESSION_TEXT,
+  UnlockScreen,
+  WRONG_PASSPHRASE_TEXT,
+} from "../src/client/UnlockScreen";
 
 const hooks = vi.hoisted(() => ({
   useAgent: vi.fn((options: unknown) => ({ options })),
@@ -78,10 +86,18 @@ describe("StatusBanner", () => {
 });
 
 describe("UnlockScreen", () => {
+  const stillLocked = async () => "locked" as const;
   it("shows the too-short message without a form", () => {
-    render(<UnlockScreen gate="token_too_short" onUnlocked={() => {}} />);
+    render(<UnlockScreen gate="token_too_short" onUnlocked={stillLocked} />);
     expect(screen.getByText(TOKEN_TOO_SHORT_TEXT)).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("follows a gate the parent changes while the screen stays mounted", () => {
+    const { rerender } = render(<UnlockScreen gate="locked" onUnlocked={stillLocked} />);
+    expect(screen.getByLabelText("Passphrase")).toBeTruthy();
+    rerender(<UnlockScreen gate="token_too_short" onUnlocked={stillLocked} />);
+    expect(screen.getByText(TOKEN_TOO_SHORT_TEXT)).toBeTruthy();
   });
 
   async function submit(passphrase: string) {
@@ -91,7 +107,7 @@ describe("UnlockScreen", () => {
 
   it("calls onUnlocked after a 200", async () => {
     mockFetch(() => new Response('{"ok":true}', { status: 200 }));
-    const onUnlocked = vi.fn();
+    const onUnlocked = vi.fn(async () => "unlocked" as const);
     render(<UnlockScreen gate="locked" onUnlocked={onUnlocked} />);
     await submit("correct-horse-battery-staple");
     await waitFor(() => expect(onUnlocked).toHaveBeenCalledOnce());
@@ -102,14 +118,14 @@ describe("UnlockScreen", () => {
 
   it("says the passphrase is wrong after a 401", async () => {
     mockFetch(() => new Response('{"error":"invalid_passphrase"}', { status: 401 }));
-    render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
+    render(<UnlockScreen gate="locked" onUnlocked={stillLocked} />);
     await submit("wrong-passphrase-0000");
     expect(await screen.findByText(WRONG_PASSPHRASE_TEXT)).toBeTruthy();
   });
 
   it("says the agent could not be reached when the request fails, and clears that on the next answer", async () => {
     mockFetch(() => new Response('{"error":"invalid_passphrase"}', { status: 401 }));
-    render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
+    render(<UnlockScreen gate="locked" onUnlocked={stillLocked} />);
     await submit("wrong-passphrase-0000");
     expect(await screen.findByText(WRONG_PASSPHRASE_TEXT)).toBeTruthy();
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("Failed to fetch"))));
@@ -126,7 +142,7 @@ describe("UnlockScreen", () => {
   it("says the agent answered with an error, not that the passphrase is wrong, after a 500, 400 or 405", async () => {
     for (const status of [500, 400, 405]) {
       mockFetch(() => new Response('{"error":"internal"}', { status }));
-      render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
+      render(<UnlockScreen gate="locked" onUnlocked={stillLocked} />);
       await submit("correct-horse-battery-staple");
       expect(await screen.findByText(SERVER_ERROR_TEXT)).toBeTruthy();
       expect(screen.queryByText(WRONG_PASSPHRASE_TEXT)).toBeNull();
@@ -141,7 +157,7 @@ describe("UnlockScreen", () => {
 
   it("keeps the form and shows the server-error text after a 503 without the too-short body", async () => {
     mockFetch(() => new Response("<html>Service Unavailable</html>", { status: 503 }));
-    render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
+    render(<UnlockScreen gate="locked" onUnlocked={stillLocked} />);
     await submit("correct-horse-battery-staple");
     expect(await screen.findByText(SERVER_ERROR_TEXT)).toBeTruthy();
     expect(screen.queryByText(TOKEN_TOO_SHORT_TEXT)).toBeNull();
@@ -150,12 +166,12 @@ describe("UnlockScreen", () => {
 
   it("shows the wait after a 429 and the too-short text after a 503", async () => {
     mockFetch(() => new Response('{"error":"too_many_attempts"}', { status: 429, headers: { "Retry-After": "42" } }));
-    render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
+    render(<UnlockScreen gate="locked" onUnlocked={stillLocked} />);
     await submit("wrong-passphrase-0000");
     expect(await screen.findByText(tooManyAttemptsText(42))).toBeTruthy();
     cleanup();
     mockFetch(() => new Response('{"error":"access_token_too_short"}', { status: 503 }));
-    render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
+    render(<UnlockScreen gate="locked" onUnlocked={stillLocked} />);
     await submit("anything-at-all-123");
     expect(await screen.findByText(TOKEN_TOO_SHORT_TEXT)).toBeTruthy();
   });
@@ -163,7 +179,7 @@ describe("UnlockScreen", () => {
   it("falls back to the 600-second wait after a 429 with no, an empty, a zero or a malformed Retry-After", async () => {
     for (const headers of [{}, { "Retry-After": "" }, { "Retry-After": "0" }, { "Retry-After": "0.5" }, { "Retry-After": "-5" }, { "Retry-After": "0x10" }] as Record<string, string>[]) {
       mockFetch(() => new Response('{"error":"too_many_attempts"}', { status: 429, headers }));
-      render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
+      render(<UnlockScreen gate="locked" onUnlocked={stillLocked} />);
       await submit("wrong-passphrase-0000");
       expect(await screen.findByText(tooManyAttemptsText(600))).toBeTruthy();
       expect(screen.queryByText(tooManyAttemptsText(0))).toBeNull();
@@ -232,6 +248,73 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByText(BANNER_TEXT.namespace_invalid)).toBeTruthy();
     expect(hooks.useAgent).not.toHaveBeenCalled();
+  });
+
+  describe("after a successful unlock, when the health check that follows does not say unlocked", () => {
+    /** /api/health answers `first` on load and `after` once /api/unlock has answered 200. */
+    function serve(first: () => Response, after: () => Response) {
+      let unlocked = false;
+      mockFetch((url) => {
+        if (url === "/api/unlock") {
+          unlocked = true;
+          return new Response('{"ok":true}', { status: 200 });
+        }
+        return unlocked ? after() : first();
+      });
+    }
+    async function unlockInApp() {
+      render(<App />);
+      fireEvent.change(await screen.findByLabelText("Passphrase"), { target: { value: "correct-horse-battery-staple" } });
+      fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    }
+    const locked = () => new Response('{"error":"unauthorized"}', { status: 401 });
+
+    it("says the browser did not keep the session when /api/health still answers 401, and keeps the passphrase", async () => {
+      serve(locked, locked);
+      await unlockInApp();
+      expect(await screen.findByText(UNLOCKED_NO_SESSION_TEXT)).toBeTruthy();
+      expect(screen.queryByText(WRONG_PASSPHRASE_TEXT)).toBeNull();
+      expect((screen.getByLabelText("Passphrase") as HTMLInputElement).value).toBe("correct-horse-battery-staple");
+      expect(hooks.useAgent).not.toHaveBeenCalled();
+    });
+
+    it("says the check failed when /api/health answers 500, another 503 or nothing", async () => {
+      const failures: (() => Response)[] = [
+        () => new Response("Internal Server Error", { status: 500 }),
+        () => new Response("<html>Service Unavailable</html>", { status: 503 }),
+        () => {
+          throw new TypeError("Failed to fetch");
+        },
+      ];
+      for (const failure of failures) {
+        serve(locked, failure);
+        await unlockInApp();
+        expect(await screen.findByText(UNLOCKED_CHECK_FAILED_TEXT)).toBeTruthy();
+        expect(screen.queryByText(NETWORK_ERROR_TEXT)).toBeNull();
+        expect((screen.getByLabelText("Passphrase") as HTMLInputElement).value).toBe("correct-horse-battery-staple");
+        expect(hooks.useAgent).not.toHaveBeenCalled();
+        cleanup();
+        vi.clearAllMocks();
+      }
+    });
+
+    it("shows the too-short message when /api/health then answers the too-short 503", async () => {
+      serve(locked, () => new Response('{"error":"access_token_too_short"}', { status: 503 }));
+      await unlockInApp();
+      expect(await screen.findByText(TOKEN_TOO_SHORT_TEXT)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Unlock" })).toBeNull();
+    });
+
+    it("clears the message and opens the chat once a later unlock is followed by a 200", async () => {
+      let healthAfter: () => Response = locked;
+      serve(locked, () => healthAfter());
+      await unlockInApp();
+      expect(await screen.findByText(UNLOCKED_NO_SESSION_TEXT)).toBeTruthy();
+      healthAfter = () => new Response('{"state":"ok"}', { status: 200 });
+      fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+      await waitFor(() => expect(hooks.useAgent).toHaveBeenCalled());
+      expect(screen.queryByText(UNLOCKED_NO_SESSION_TEXT)).toBeNull();
+    });
   });
 
   it("re-checks health after a failed connection", async () => {
