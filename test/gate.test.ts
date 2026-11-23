@@ -334,7 +334,7 @@ describe('runGate against a fake Bilinc', () => {
     ['rollback fails', 'rollback', 2],
   ] as const)('forgets the keys this run left when %s, so the next run is not refused', async (_name, method, removed) => {
     const fake = fakeBilinc();
-    fake.bilinc.client[method] = () => Promise.reject(new FakeBilincError('cloud_runtime_unavailable', 503));
+    Object.assign(fake.bilinc.client, { [method]: () => Promise.reject(new FakeBilincError('cloud_runtime_unavailable', 503)) });
     const report = await runGate({ bilinc: fake.bilinc, runId: 'rc1', sleep: fake.sleep, log: quiet });
     expect(report.ok).toBe(false);
     expect(report.results.find((result) => result.id === 'cleanup')).toEqual({
