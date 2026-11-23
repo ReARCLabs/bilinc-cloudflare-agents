@@ -141,6 +141,7 @@ describe("client: read/write split", () => {
     ["HTML 504", html(504)],
     ["HTML 524", html(524)],
     ["maintenance 503", html(503, { "Retry-After": "300" })],
+    ["JSON 500 with another code", apiError(500, "internal_error")],
   ];
 
   it.each(unknownOnWrite)("%s: outcome unknown on a write, unavailable on a read", async (_name, responder) => {

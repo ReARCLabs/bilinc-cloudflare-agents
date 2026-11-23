@@ -150,6 +150,8 @@ describe("writes", () => {
     ["HTML 502", html(502)],
     ["cloud_runtime_unavailable", apiError(503, "cloud_runtime_unavailable")],
     ["mutation_outcome_unknown", apiError(503, "mutation_outcome_unknown")],
+    ["a JSON 500 with another code (an edge or a later server code may answer after the write was applied)", apiError(500, "internal_error")],
+    ["a JSON 504 with another code", apiError(504, "gateway_timeout")],
   ])("are not retried after %s", async (_name, responder) => {
     const m = mockFetch(responder, COMMIT_OK);
     const p = settle(makeClient().client.forget({ key: "k", reason: "r" }));
@@ -183,6 +185,16 @@ describe("writes", () => {
       retryable: false,
     });
     expect(r.ok === false && noticeFor(r.error, "createSnapshot")).toBe(NOTICES.outcomeUnknown);
+  });
+
+  it("capability_unavailable (refused before anything is reserved or run) is a definite answer", async () => {
+    const m = mockFetch(apiError(503, "capability_unavailable"), COMMIT_OK);
+    const p = settle(makeClient().client.commit({ key: "k", value: "v" }));
+    await vi.advanceTimersByTimeAsync(10_000);
+    const r = await p;
+    expect(m.fn).toHaveBeenCalledTimes(1);
+    expect(r.ok === false && (r.error as { outcomeUnknown: boolean }).outcomeUnknown).toBe(false);
+    expect(r.ok === false && noticeFor(r.error, "commit")).toBe(NOTICES.unavailable);
   });
 
   it("idempotency_conflict without inFlight is not repeated", async () => {

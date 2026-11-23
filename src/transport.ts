@@ -76,7 +76,11 @@ export function isReadRetryable(f: AttemptFailure): boolean {
   );
 }
 
-/** A write that failed like this may have been applied. */
+/**
+ * A write that failed like this may have been applied. Any JSON 5xx counts, not only Bilinc's two
+ * outcome-unknown codes: an edge or a later server code may answer after the write ran. The one
+ * exception is `capability_unavailable`, which Bilinc sends before it reserves credits or runs anything.
+ */
 export function hasNoDefiniteAnswer(f: AttemptFailure): boolean {
   return (
     f.kind === "network" ||
@@ -84,7 +88,7 @@ export function hasNoDefiniteAnswer(f: AttemptFailure): boolean {
     f.kind === "non_json_2xx" ||
     f.kind === "non_json_5xx" ||
     f.kind === "bad_shape" ||
-    (f.kind === "json_error" && UNKNOWN_OUTCOME_CODES.has(f.code))
+    (f.kind === "json_error" && (UNKNOWN_OUTCOME_CODES.has(f.code) || (f.status >= 500 && f.code !== "capability_unavailable")))
   );
 }
 
