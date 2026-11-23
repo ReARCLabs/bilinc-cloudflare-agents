@@ -158,6 +158,17 @@ describe("UnlockScreen", () => {
     await submit("anything-at-all-123");
     expect(await screen.findByText(TOKEN_TOO_SHORT_TEXT)).toBeTruthy();
   });
+
+  it("falls back to the 600-second wait after a 429 with no or an empty Retry-After", async () => {
+    for (const headers of [{}, { "Retry-After": "" }] as Record<string, string>[]) {
+      mockFetch(() => new Response('{"error":"too_many_attempts"}', { status: 429, headers }));
+      render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
+      await submit("wrong-passphrase-0000");
+      expect(await screen.findByText(tooManyAttemptsText(600))).toBeTruthy();
+      expect(screen.queryByText(tooManyAttemptsText(0))).toBeNull();
+      cleanup();
+    }
+  });
 });
 
 describe("App", () => {

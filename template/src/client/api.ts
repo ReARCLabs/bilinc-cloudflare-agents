@@ -38,7 +38,8 @@ export async function unlock(passphrase: string): Promise<UnlockResult> {
   if (res.ok) return { ok: true, gate: "unlocked" };
   if (await isTokenTooShort(res)) return { ok: false, gate: "token_too_short" };
   if (res.status === 429) {
-    const retryAfterSeconds = Number(res.headers.get("Retry-After"));
+    // A missing or empty header would be Number("") === 0; leave it undefined so the 600 s fallback shows.
+    const retryAfterSeconds = Number(res.headers.get("Retry-After")?.trim() || NaN);
     return { ok: false, gate: "too_many_attempts", retryAfterSeconds: Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : undefined };
   }
   if (res.status === 401) return { ok: false, gate: "locked" };
