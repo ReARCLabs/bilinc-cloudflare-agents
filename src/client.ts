@@ -347,7 +347,7 @@ export function createClient(config: ClientConfig): BilincClient {
       const sessionId = !trimmed
         ? undefined
         : trimmed.length > MAX_SESSION_ID_CHARS
-          ? `sha256:${await sha256Hex(i.sessionId as string)}`
+          ? `sha256:${await sha256Hex(trimmed)}`
           : trimmed;
       return run(
         "commit",

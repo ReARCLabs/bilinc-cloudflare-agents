@@ -83,6 +83,14 @@ describe("wire format per operation", () => {
     );
   });
 
+  it("commit: a long sessionId is hashed after trimming, so padding does not change the hash", async () => {
+    const m = mockFetch(json(201, { entryVersion: "ev_1", affected_keys: [], warnings: [] }));
+    await makeClient().client.commit({ key: "k", value: "v", sessionId: `  ${"x".repeat(300)}\n` });
+    expect((m.sent[0]?.body as { sessionId: string }).sessionId).toBe(
+      "sha256:0d4e2ca9e9cbced7a7a5380eb29e1a3783b9b6d0db72de36a1051038e1c1fbc7",
+    );
+  });
+
   it("commit: a sessionId of exactly 256 chars is sent unchanged", async () => {
     const m = mockFetch(json(201, commitFixture));
     await makeClient().client.commit({ key: "k", value: "v", sessionId: "y".repeat(256) });
