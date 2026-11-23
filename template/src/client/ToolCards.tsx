@@ -73,10 +73,12 @@ export function PreviewSummary({ preview }: { preview: RollbackPreviewResult }) 
   );
 }
 
-/** Result cards for the preview and diff tools; null for every other tool part. */
+const CARD_TOOLS = new Set(["bilinc_rollback_preview", "bilinc_diff", "bilinc_forget", "bilinc_rollback"]);
+
+/** Result cards for the preview and diff tools, and notices (a rejection included) for forget and rollback; null for every other tool part. */
 export function ToolCard({ part }: { part: ToolUIPart }) {
   const name = toolName(part);
-  if (name !== "bilinc_rollback_preview" && name !== "bilinc_diff") return null;
+  if (!CARD_TOOLS.has(name)) return null;
   if (part.state !== "output-available") return null;
   const output: unknown = part.output;
   if (typeof output === "string") {

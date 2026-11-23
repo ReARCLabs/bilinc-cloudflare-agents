@@ -2,7 +2,7 @@ import { useAgentChat } from "@cloudflare/think/react";
 import { useAgent } from "agents/react";
 import type { ToolUIPart, UIMessage } from "ai";
 import { useEffect, type FormEvent } from "react";
-import { AGENT_BINDING } from "../constants";
+import { AGENT_BINDING, rejectedByUserOutput } from "../constants";
 import { ApprovalCard } from "./ApprovalCard";
 import { isRollbackPreview, ToolCard, toolName, type RollbackPreviewResult } from "./ToolCards";
 
@@ -57,7 +57,7 @@ export function Chat(p: { chatId: string; onNewChat(): void; onFailure(): void }
           onApprove={() => void addToolApprovalResponse({ id: approvalId, approved: true })}
           onReject={(reason) =>
             reason
-              ? addToolOutput({ toolCallId: part.toolCallId, toolName: name, state: "output-error", errorText: reason })
+              ? addToolOutput({ toolCallId: part.toolCallId, toolName: name, output: rejectedByUserOutput(reason) })
               : void addToolApprovalResponse({ id: approvalId, approved: false })
           }
         />

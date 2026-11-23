@@ -17,6 +17,13 @@ export const AUTO_CHECKPOINT_FLAG = "bilinc:autoCheckpoint";
 export type AutoCheckpointFlag = "pending" | "done" | "unknown";
 export const AUTO_CHECKPOINT_LABEL_PREFIX = "auto: chat start ";
 
+/**
+ * The tool output a Reject with a typed reason records for forget or rollback. It is an ordinary
+ * output, not "output-error": useAgentChat sends autoContinue false for an error output, so no
+ * reply would follow, and an approval response carries no reason to the server.
+ */
+export const rejectedByUserOutput = (reason: string) => `not done: rejected by the user, who said: ${reason}`;
+
 export const AGENT_BINDING = "BilincAgent";
 export const AGENT_PATH_SEGMENT = "bilinc-agent";
 export const CHAT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

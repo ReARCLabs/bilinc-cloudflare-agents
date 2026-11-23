@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ToolUIPart, UIMessage } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BANNER_TEXT, TOKEN_TOO_SHORT_TEXT } from "../src/constants";
+import { BANNER_TEXT, rejectedByUserOutput, TOKEN_TOO_SHORT_TEXT } from "../src/constants";
 import { App } from "../src/client/App";
 import { ApprovalCard, NO_PREVIEW_TEXT } from "../src/client/ApprovalCard";
 import { Chat } from "../src/client/Chat";
@@ -285,6 +285,16 @@ describe("ToolCard", () => {
     expect(screen.getByText(/cut short, so the counts are too/)).toBeTruthy();
   });
 
+  it("shows a rejection with its reason, and other notices, for forget and rollback", () => {
+    const rejected = { type: "tool-bilinc_rollback", toolCallId: "c2", state: "output-available", input: { previewId: "p-1" }, output: rejectedByUserOutput("keep red") } as unknown as ToolUIPart;
+    render(<ToolCard part={rejected} />);
+    expect(screen.getByText(rejectedByUserOutput("keep red"))).toBeTruthy();
+    cleanup();
+    const notice = { type: "tool-bilinc_forget", toolCallId: "c3", state: "output-available", input: {}, output: "not found" } as unknown as ToolUIPart;
+    render(<ToolCard part={notice} />);
+    expect(screen.getByText("not found")).toBeTruthy();
+  });
+
   it("shows a notice string as text and ignores other tools", () => {
     const notice = { ...(previewPart as object), output: "checkpoint not found; call bilinc_checkpoints to list the ids that exist" } as unknown as ToolUIPart;
     render(<ToolCard part={notice} />);
@@ -333,18 +343,18 @@ describe("Chat", () => {
     expect(hooks.chat.addToolApprovalResponse).toHaveBeenCalledWith({ id: "appr-2", approved: true });
   });
 
-  it("sends a plain Reject as a denial and a Reject with a reason as a tool error", () => {
+  it("sends a plain Reject as a denial and a Reject with a reason as an ordinary tool output, so both continue the chat", () => {
     hooks.chat.messages = [assistant(previewPart, rollbackPart("p-1"))];
     render(<Chat chatId={CHAT} onNewChat={() => {}} onFailure={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
     expect(hooks.chat.addToolApprovalResponse).toHaveBeenCalledWith({ id: "appr-2", approved: false });
     fireEvent.change(screen.getByLabelText("Reason for rejecting (optional)"), { target: { value: "keep red" } });
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    // No state: the hook sends autoContinue false for "output-error", which left the chat without a reply.
     expect(hooks.chat.addToolOutput).toHaveBeenCalledWith({
       toolCallId: "c2",
       toolName: "bilinc_rollback",
-      state: "output-error",
-      errorText: "keep red",
+      output: rejectedByUserOutput("keep red"),
     });
   });
 
