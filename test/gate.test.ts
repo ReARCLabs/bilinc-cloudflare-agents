@@ -218,7 +218,7 @@ describe('runGate against a fake Bilinc', () => {
     expect(report.ok).toBe(false);
     expect(report.results.find((result) => result.id === 'project.empty')?.ok).toBe(true);
     expect(report.results.length).toBeGreaterThan(2);
-    const last = report.results.at(-1);
+    const last = report.results.find((result) => result.id === 'aborted');
     expect(last).toMatchObject({ id: 'aborted', item: 'gate', ok: false });
     expect(last?.detail).toContain('TypeError: boom with');
     expect(JSON.stringify(report)).not.toContain('bil_live_abc123XYZ');
@@ -231,7 +231,7 @@ describe('runGate against a fake Bilinc', () => {
     let calls = 0;
     fake.bilinc.client.status = () => (++calls === 6 ? Promise.reject(new FakeBilincError('cloud_runtime_unavailable', 503)) : status());
     const report = await runGate({ bilinc: fake.bilinc, runId: 'r1b', sleep: fake.sleep, log: quiet });
-    expect(report.results.at(-1)).toMatchObject({ id: 'aborted', ok: false, detail: 'cloud_runtime_unavailable 503' });
+    expect(report.results.find((result) => result.id === 'aborted')).toMatchObject({ id: 'aborted', ok: false, detail: 'cloud_runtime_unavailable 503' });
   });
 
   it('fails the credit checks when recall costs more than one credit', async () => {
@@ -316,6 +316,59 @@ describe('runGate against a fake Bilinc', () => {
     expect(report.results.find((result) => result.id === 'snapshots.empty')?.detail).toBe(
       '1 other checkpoints before the run, 99 from earlier gate runs; the list is full, so older checkpoints were not checked',
     );
+  });
+
+  it('makes no cleanup calls and adds no cleanup check when the run removed its own keys', async () => {
+    const fake = fakeBilinc();
+    const forget = vi.spyOn(fake.bilinc.client, 'forget');
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'rc0', sleep: fake.sleep, log: quiet, waitForExpiry: true });
+    expect(failedIds(report)).toEqual([]);
+    expect(forget).toHaveBeenCalledTimes(1);
+    expect(report.results.some((result) => result.id === 'cleanup')).toBe(false);
+    expect((await fake.bilinc.client.list({})).total).toBe(0);
+  });
+
+  it.each([
+    ['createSnapshot fails', 'createSnapshot', 1],
+    ['rollbackPreview fails', 'rollbackPreview', 3],
+    ['rollback fails', 'rollback', 2],
+  ] as const)('forgets the keys this run left when %s, so the next run is not refused', async (_name, method, removed) => {
+    const fake = fakeBilinc();
+    fake.bilinc.client[method] = () => Promise.reject(new FakeBilincError('cloud_runtime_unavailable', 503));
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'rc1', sleep: fake.sleep, log: quiet });
+    expect(report.ok).toBe(false);
+    expect(report.results.find((result) => result.id === 'cleanup')).toEqual({
+      id: 'cleanup',
+      item: 'gate',
+      ok: true,
+      detail: `forgot ${removed} keys this run left behind`,
+    });
+    expect((await fake.bilinc.client.list({})).total).toBe(0);
+  });
+
+  it('forgets the keys this run left when it aborts', async () => {
+    const fake = fakeBilinc();
+    const status = fake.bilinc.client.status.bind(fake.bilinc.client);
+    let calls = 0;
+    fake.bilinc.client.status = () => (++calls === 6 ? Promise.reject(new TypeError('boom')) : status());
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'rc2', sleep: fake.sleep, log: quiet });
+    expect(report.results.find((result) => result.id === 'aborted')?.ok).toBe(false);
+    expect(report.results.find((result) => result.id === 'cleanup')?.ok).toBe(true);
+    expect((await fake.bilinc.client.list({})).total).toBe(0);
+  });
+
+  it('never throws when cleanup fails, and names the keys still there', async () => {
+    const fake = fakeBilinc();
+    fake.bilinc.client.createSnapshot = () => Promise.reject(new FakeBilincError('cloud_runtime_unavailable', 503));
+    fake.bilinc.client.forget = () => Promise.reject(new FakeBilincError('cloud_runtime_unavailable', 503));
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'rc3', sleep: fake.sleep, log: quiet });
+    expect(report.ok).toBe(false);
+    expect(report.results.find((result) => result.id === 'cleanup')).toEqual({
+      id: 'cleanup',
+      item: 'gate',
+      ok: false,
+      detail: 'forgot 0 keys this run left behind; still there: cf.gate.gate-rc3-fact (cloud_runtime_unavailable 503)',
+    });
   });
 
   it('logs one PASS or FAIL line per check', async () => {

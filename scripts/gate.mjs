@@ -3,7 +3,7 @@
 // G5 includes the deployed sidecar version: the status.runtime-version check prints it and stores it in the report.
 // Runs every BilincClient call against production Bilinc with a key from a DEDICATED test account.
 // It spends about 11 credits on that account and runs a project-wide rollback, so it refuses a project that already holds entries,
-// or a checkpoint that an earlier gate run did not make.
+// or a checkpoint that an earlier gate run did not make. A run that ends early forgets the keys it wrote (best effort).
 // Usage: BILINC_GATE_API_KEY=... node scripts/gate.mjs <report.json> [--wait-expiry] [--allow-nonempty]
 import { randomBytes } from 'node:crypto';
 import { realpathSync, writeFileSync } from 'node:fs';
@@ -110,7 +110,38 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
     results.push({ id, item, ok, detail });
     log(`${ok ? 'PASS' : 'FAIL'} ${item} ${id} (${detail})`);
   };
-  const finish = () => ({ ok: results.every((result) => result.ok), results });
+  // Keys this run may have written. A key leaves the set once the run's own rollback or forget removed it;
+  // whatever is left when the run ends (an early return, a throw, a failed rollback or forget) is forgotten by cleanUp().
+  const leftover = new Set();
+  // Best effort, never throws: a failure is recorded in the cleanup check. Runs only when keys are left.
+  const cleanUp = async () => {
+    if (leftover.size === 0) return;
+    let removed = 0;
+    const stillThere = [];
+    for (const key of leftover) {
+      try {
+        await client.forget({ key, reason: `gate: cleanup ${runId}` });
+        removed += 1;
+      } catch (error) {
+        if (!(isError(error) && error.code === 'memory_not_found')) stillThere.push(`${key} (${abortDetail(error)})`);
+      }
+    }
+    try {
+      check(
+        'cleanup',
+        'gate',
+        stillThere.length === 0,
+        `forgot ${removed} keys this run left behind` + (stillThere.length > 0 ? `; still there: ${stillThere.join(', ')}` : ''),
+      );
+    } catch {
+      // A throwing log must not turn cleanup into a throw.
+    }
+  };
+  // Every exit goes through finish(), so cleanup runs before ok is computed.
+  const finish = async () => {
+    await cleanUp();
+    return { ok: results.every((result) => result.ok), results };
+  };
   const expectError = (id, item, error, code, status) => {
     const ok =
       isError(error) && error.code === code && error.status === status && typeof error.requestId === 'string' && error.requestId.length > 0;
@@ -183,8 +214,11 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
     const refusedKey = `${prefix}gate-${runId}-refused`;
     const otherKey = `cf.${GATE_NAMESPACE}b.gate-${runId}-other`;
     const sessionId = `gate-${runId}`;
-    const commit = (key, value, namespace = GATE_NAMESPACE) =>
-      client.commit({ key, value, source: 'cloudflare-agent', sessionId, metadata: { agentId: 'gate', namespace } });
+    const commit = (key, value, namespace = GATE_NAMESPACE) => {
+      // Added before the call: a commit that fails without a definite answer may still have been applied.
+      leftover.add(key);
+      return client.commit({ key, value, source: 'cloudflare-agent', sessionId, metadata: { agentId: 'gate', namespace } });
+    };
 
     const listed = await measured('list', 0, () => client.list({ prefix, order: 'newest', values: 'none', limit: 10 }));
     check('list.order-newest', 'G5', listed.error === undefined, describeError(listed.error));
@@ -321,12 +355,15 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
       restored.error === undefined
         ? [...restored.value.added, ...restored.value.modified, ...restored.value.removed].filter((key) => key.includes(`gate-${runId}-`))
         : [];
+    const restoredOk = restored.error === undefined && runKeys.length === 0;
     check(
       'rollback.restored',
       'G10',
-      restored.error === undefined && runKeys.length === 0,
+      restoredOk,
       restored.error === undefined ? `${runKeys.length} keys of this run still differ` : describeError(restored.error),
     );
+    // The rollback removed every key written after the checkpoint; only the fact, which the checkpoint holds, is left.
+    if (restoredOk) for (const key of [redactedKey, refusedKey, otherKey]) leftover.delete(key);
 
     if (waitForExpiry) {
       await measured('commit.expiry-setup', 1, () => commit(fact, 'The gate test colour is green.'));
@@ -345,12 +382,9 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
     }
 
     const forgotten = await measured('forget', 1, () => client.forget({ key: fact, reason: `gate: cleanup ${runId}` }));
-    check(
-      'forget.removed',
-      'G10',
-      forgotten.error === undefined && forgotten.value.removed === true && forgotten.value.key === fact,
-      describeError(forgotten.error),
-    );
+    const forgotOk = forgotten.error === undefined && forgotten.value.removed === true && forgotten.value.key === fact;
+    check('forget.removed', 'G10', forgotOk, describeError(forgotten.error));
+    if (forgotOk) leftover.delete(fact);
 
     const endCredits = await credits();
     check('credits.total', 'G10', startCredits - endCredits === expectedTotal, `spent ${startCredits - endCredits}, expected ${expectedTotal}`);
