@@ -54,6 +54,23 @@ describe("free reads", () => {
     expect(m.fn).toHaveBeenCalledTimes(2);
   });
 
+  it("are not retried after a non-JSON 503 with Retry-After: the breaker opens for that time instead", async () => {
+    const m = mockFetch(html(503, { "Retry-After": "300" }), LIST_OK);
+    const { client } = makeClient();
+    const p = settle(client.list());
+    await vi.advanceTimersByTimeAsync(10_000);
+    const r = await p;
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(noticeFor(r.error, "list")).toBe(NOTICES.unavailable);
+    expect(m.fn).toHaveBeenCalledTimes(1);
+    const next = settle(client.list());
+    await vi.advanceTimersByTimeAsync(0);
+    const n = await next;
+    expect(n.ok).toBe(false);
+    if (!n.ok) expect((n.error as { code: string }).code).toBe("circuit_open");
+    expect(m.fn).toHaveBeenCalledTimes(1);
+  });
+
   it.each<[string, Responder]>([
     ["capability_unavailable", apiError(503, "capability_unavailable")],
     ["a JSON 4xx", apiError(404, "memory_not_found")],

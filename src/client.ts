@@ -322,7 +322,8 @@ export function createClient(config: ClientConfig): BilincClient {
         failure = result.failure;
       }
 
-      if (cls === "free" && attempts < READ_MAX_ATTEMPTS && isReadRetryable(failure)) {
+      // A 503 with Retry-After (the maintenance page) is not retried: it opens the breaker for that time instead.
+      if (cls === "free" && attempts < READ_MAX_ATTEMPTS && isReadRetryable(failure) && failure.retryAfterMs === undefined) {
         await sleep(READ_BACKOFF_MS[attempts - 1] ?? 0);
         continue;
       }
