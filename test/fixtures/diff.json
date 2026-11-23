@@ -1,0 +1,14 @@
+{
+  "from_snapshot_id": "snap_20261123_a1",
+  "to_snapshot_id": null,
+  "target": "current",
+  "from_root_hash": "rh_from",
+  "to_root_hash": "rh_to",
+  "counts": { "added": 1, "modified": 2, "removed": 1 },
+  "added": [{ "key": "cf.default.new-fact" }],
+  "modified": [{ "key": "cf.default.favorite-color" }, { "key": "other.project.key" }],
+  "removed": [{ "key": "cf.default.old-fact" }],
+  "values_included": false,
+  "truncated": false,
+  "_meta": { "requestId": "req_diff", "apiVersion": "2026-10-01", "projectId": "prj_1" }
+}

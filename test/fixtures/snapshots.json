@@ -1,0 +1,33 @@
+{
+  "snapshots": [
+    {
+      "id": "snap_20261123_c3",
+      "createdAt": "2026-11-23T10:02:00.000Z",
+      "totalEntries": 12,
+      "byType": { "semantic": 12 },
+      "rootHash": "rh_c3",
+      "label": "before the import",
+      "metadata": {}
+    },
+    {
+      "id": "snap_20261123_b2",
+      "createdAt": "2026-11-23T09:30:00.000Z",
+      "totalEntries": 10,
+      "byType": { "semantic": 10 },
+      "rootHash": "rh_b2",
+      "label": "auto: chat start 2026-11-23T09:30:00.000Z",
+      "metadata": {}
+    },
+    {
+      "id": "snap_20261122_a1",
+      "createdAt": "2026-11-22T18:00:00.000Z",
+      "totalEntries": 8,
+      "byType": { "semantic": 8 },
+      "rootHash": "rh_a1",
+      "label": null,
+      "metadata": {}
+    },
+    { "createdAt": "2026-11-22T00:00:00.000Z", "label": "no id, dropped" }
+  ],
+  "_meta": { "requestId": "req_snaps", "apiVersion": "2026-10-01", "projectId": "prj_1" }
+}

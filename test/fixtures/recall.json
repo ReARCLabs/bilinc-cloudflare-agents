@@ -1,0 +1,38 @@
+{
+  "results": [
+    {
+      "key": "cf.default.favorite-color",
+      "value": "The user's favorite color is green.",
+      "memory_type": "semantic",
+      "importance": 1.0,
+      "score": 1.0,
+      "signals": { "lexical": 1.0, "hybrid": 0.0, "semantic": 0.0, "sparse": 0.0, "temporal": 1.0, "entity": 0.0 },
+      "entry_version": "ev_3f2a9c",
+      "source": "cloudflare-agent",
+      "created_at": 1763800000.25,
+      "updated_at": 1763900000
+    },
+    {
+      "key": "cf.default.home-city",
+      "value": { "city": "Istanbul" },
+      "memory_type": "semantic",
+      "importance": 1.0,
+      "score": 0.5,
+      "signals": { "lexical": 0.5, "hybrid": 0.0, "semantic": 0.0, "sparse": 0.0, "temporal": 0.5, "entity": 0.0 },
+      "entry_version": "ev_9b1c00",
+      "source": null,
+      "created_at": 1763700000,
+      "updated_at": 1763890000
+    },
+    {
+      "key": "notes.unloaded",
+      "value": "an entry the runtime could not load provenance for",
+      "memory_type": "semantic",
+      "importance": 1.0,
+      "score": 0.25
+    },
+    { "value": "no key, dropped" }
+  ],
+  "state_version": "sv_41",
+  "_meta": { "requestId": "req_recall", "apiVersion": "2026-10-01", "projectId": "prj_1" }
+}

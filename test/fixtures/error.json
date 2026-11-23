@@ -1,0 +1,7 @@
+{
+  "error": "invalid_request",
+  "message": "label must be at most 128 characters",
+  "requestId": "req_fixture",
+  "retryable": false,
+  "details": { "field": "label" }
+}

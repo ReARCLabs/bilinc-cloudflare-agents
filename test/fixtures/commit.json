@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "operation": "commit",
+  "affected_keys": ["cf.default.favorite-color"],
+  "removed_keys": [],
+  "entryVersion": "ev_3f2a9c",
+  "stateVersion": "sv_42",
+  "_meta": { "requestId": "req_commit", "apiVersion": "2026-10-01", "projectId": "prj_1", "idempotencyKey": "k", "reconciliationPending": false }
+}

@@ -1,6 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BilincError, NOTICES, defaultOnError, inputRejected, isBilincError, noticeFor } from "../src/errors";
 import type { BilincOp } from "../src/errors";
+import { KEY, makeClient, settle } from "./helpers/client";
+import { apiError, hang, html, json, mockFetch, ok, redirect, reject } from "./helpers/mock-fetch";
+import type { Responder } from "./helpers/mock-fetch";
+import errorFixture from "./fixtures/error.json";
 
 const err = (code: string, status: number, extra: Partial<ConstructorParameters<typeof BilincError>[0]> = {}) =>
   new BilincError({ code, status, ...extra });
@@ -117,5 +121,144 @@ describe("defaultOnError", () => {
       ["[bilinc] commit failed: payment_required requestId=req_abc123"],
       ["[bilinc] list failed: network"],
     ]);
+  });
+});
+
+describe("client: read/write split", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const unknownOnWrite: [string, Responder][] = [
+    ["cloud_runtime_unavailable", apiError(503, "cloud_runtime_unavailable")],
+    ["rejected fetch", reject],
+    ["timeout", hang],
+    ["HTML 502", html(502)],
+    ["HTML 504", html(504)],
+    ["HTML 524", html(524)],
+    ["maintenance 503", html(503, { "Retry-After": "300" })],
+  ];
+
+  it.each(unknownOnWrite)("%s: outcome unknown on a write, unavailable on a read", async (_name, responder) => {
+    mockFetch(responder);
+    const { client } = makeClient();
+    const write = settle(client.commit({ key: "k", value: "v" }));
+    await vi.advanceTimersByTimeAsync(60_000);
+    const w = await write;
+    expect(w.ok).toBe(false);
+    if (w.ok) return;
+    expect((w.error as BilincError).outcomeUnknown).toBe(true);
+    expect(noticeFor(w.error, "commit")).toBe(NOTICES.outcomeUnknown);
+
+    const read = settle(makeClient().client.list());
+    await vi.advanceTimersByTimeAsync(60_000);
+    const r = await read;
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect((r.error as BilincError).outcomeUnknown).toBe(false);
+    expect(noticeFor(r.error, "list")).toBe(NOTICES.unavailable);
+  });
+
+  it("a 2xx that is not JSON is outcome unknown on a write", async () => {
+    mockFetch(html(201));
+    const w = await settle(makeClient().client.rollback({ snapshotId: "s1", reason: "r", confirmationToken: "t" }));
+    expect(w.ok === false && noticeFor(w.error, "rollback")).toBe(NOTICES.outcomeUnknown);
+  });
+
+  it.each<[string, Responder]>([
+    ["3xx", redirect(302)],
+    ["non-JSON 4xx", html(403)],
+  ])("%s: unavailable on both, never outcome unknown", async (_name, responder) => {
+    mockFetch(responder);
+    const w = await settle(makeClient().client.forget({ key: "k", reason: "r" }));
+    const r = await settle(makeClient().client.history({ key: "k" }));
+    for (const [result, op] of [[w, "forget"], [r, "history"]] as const) {
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect((result.error as BilincError).outcomeUnknown).toBe(false);
+      expect(noticeFor(result.error, op)).toBe(NOTICES.unavailable);
+    }
+  });
+
+  it("circuit_open and rate_capped send nothing and read 'unavailable'", async () => {
+    const m = mockFetch(apiError(402, "payment_required"));
+    const { client } = makeClient();
+    await settle(client.commit({ key: "k", value: "v" }));
+    const open = await settle(client.commit({ key: "k", value: "v" }));
+    expect(m.fn).toHaveBeenCalledTimes(1);
+    expect(open.ok === false && (open.error as BilincError).code).toBe("circuit_open");
+    expect(open.ok === false && noticeFor(open.error, "commit")).toBe(NOTICES.unavailable);
+
+    const m2 = mockFetch(ok({ results: [] }));
+    const fresh = makeClient();
+    for (let i = 0; i < 20; i++) await fresh.client.recall({ query: "q" });
+    const capped = await settle(fresh.client.recall({ query: "q" }));
+    expect(m2.fn).toHaveBeenCalledTimes(20);
+    expect(capped.ok === false && (capped.error as BilincError)).toMatchObject({ code: "rate_capped", status: 0, outcomeUnknown: false });
+    expect(capped.ok === false && noticeFor(capped.error, "recall")).toBe(NOTICES.unavailable);
+  });
+});
+
+describe("client: version_conflict per operation", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("commit: definite refusal, no second request, outcome known", async () => {
+    const m = mockFetch(apiError(409, "version_conflict"));
+    const r = await settle(makeClient().client.commit({ key: "k", value: "v" }));
+    expect(m.fn).toHaveBeenCalledTimes(1);
+    expect(r.ok === false && (r.error as BilincError).outcomeUnknown).toBe(false);
+    expect(r.ok === false && noticeFor(r.error, "commit")).toBe(NOTICES.commitRefused);
+  });
+
+  it("forget with expectedVersion: the entry changed", async () => {
+    mockFetch(apiError(409, "version_conflict"));
+    const r = await settle(makeClient().client.forget({ key: "k", reason: "r", expectedVersion: "ev_1" }));
+    expect(r.ok === false && noticeFor(r.error, "forget", { expectedVersion: true })).toBe(NOTICES.entryChanged);
+  });
+
+  it("invalid_request with no details from the server", async () => {
+    mockFetch(apiError(400, "invalid_request"));
+    const { client, onError } = makeClient();
+    const r = await settle(client.list());
+    expect(r.ok === false && noticeFor(r.error, "list")).toBe(NOTICES.inputRejectedByBilinc);
+    expect(onError.mock.calls[0]?.[0].requestId).toBe("req_err");
+  });
+});
+
+describe("client: fixture error body and key hygiene", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("the error fixture maps to its field notice and keeps the requestId", async () => {
+    mockFetch(json(400, errorFixture));
+    const r = await settle(makeClient().client.createSnapshot({ label: "ok" }));
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toMatchObject({ code: "invalid_request", status: 400, requestId: "req_fixture", outcomeUnknown: false });
+    expect(noticeFor(r.error, "createSnapshot")).toBe("input rejected: label");
+  });
+
+  it("the key appears in no error, notice or default log line", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const responders: Responder[] = [apiError(401, "invalid_api_key"), reject, html(502), redirect(302)];
+    for (const responder of responders) {
+      mockFetch(responder);
+      const { client } = makeClient();
+      const r = await settle(client.forget({ key: "k", reason: "r" }));
+      expect(r.ok).toBe(false);
+      if (r.ok) continue;
+      const error = r.error as BilincError;
+      defaultOnError(error, "forget");
+      const surface = [error.message, String(error), JSON.stringify(error), JSON.stringify(error.details ?? null), noticeFor(error, "forget")];
+      for (const text of surface) expect(text).not.toContain(KEY);
+    }
+    for (const call of warn.mock.calls) expect(String(call[0])).not.toContain(KEY);
+    expect(warn).toHaveBeenCalledTimes(4);
   });
 });

@@ -1,0 +1,23 @@
+{
+  "status": "ok",
+  "runtime": { "version": "2.7.3" },
+  "workspace": { "organizationId": "org_1", "projectId": "prj_1", "projectName": "Main" },
+  "apiKey": { "id": "key_1", "prefix": "bil_live_ab", "name": "cloudflare" },
+  "plan": { "key": "free", "entitlementStatus": "active", "entitlementEndsAt": null, "trialDays": 0, "deploymentMode": "cloud", "supportTier": "community" },
+  "capabilities": { "recall": true, "commit": true, "snapshots": true, "diff": true, "rollback": true, "history": true, "list": true },
+  "tools": ["recall", "remember"],
+  "recallProfiles": ["fast", "balanced"],
+  "limits": { "maxRecallLimit": 100, "retentionDays": 30, "snapshotRetentionDays": 30 },
+  "usage": [],
+  "credits": {
+    "monthlyIncludedCredits": 2000,
+    "monthlyUsedCredits": 12,
+    "monthlyRemainingCredits": 1988,
+    "purchasedCredits": 0,
+    "reservedCredits": 0,
+    "availablePurchasedCredits": 0,
+    "availableTotalCredits": 1988,
+    "currency": "usd"
+  },
+  "_meta": { "requestId": "req_status", "apiVersion": "2026-10-01", "projectId": "prj_1" }
+}

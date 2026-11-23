@@ -1,0 +1,24 @@
+{
+  "key": "cf.default.favorite-color",
+  "exists": true,
+  "entries": [
+    {
+      "op": "commit",
+      "at": "2026-11-23T08:00:00.000Z",
+      "reason": null,
+      "source": "cloudflare-agent",
+      "before": "The user's favorite color is blue.",
+      "after": "The user's favorite color is green."
+    },
+    {
+      "op": "commit",
+      "at": "2026-11-22T08:00:00.000Z",
+      "reason": null,
+      "source": "cloudflare-agent",
+      "after": "The user's favorite color is blue."
+    }
+  ],
+  "truncated": false,
+  "values": "preview",
+  "_meta": { "requestId": "req_hist", "apiVersion": "2026-10-01", "projectId": "prj_1" }
+}

@@ -1,0 +1,28 @@
+{
+  "entries": [
+    {
+      "key": "cf.default.favorite-color",
+      "memoryType": "semantic",
+      "importance": 1,
+      "source": "cloudflare-agent",
+      "createdAt": "2026-11-22T08:00:00.000Z",
+      "updatedAt": "2026-11-23T08:00:00.000Z",
+      "entryVersion": "ev_3f2a9c"
+    },
+    {
+      "key": "cf.default.home-city",
+      "memoryType": "semantic",
+      "importance": 1,
+      "source": null,
+      "createdAt": "2026-11-21T08:00:00.000Z",
+      "updatedAt": "2026-11-22T08:00:00.000Z",
+      "entryVersion": "ev_9b1c00"
+    }
+  ],
+  "nextCursor": null,
+  "total": 2,
+  "values": "none",
+  "stateVersion": "sv_41",
+  "order": "newest",
+  "_meta": { "requestId": "req_list", "apiVersion": "2026-10-01", "projectId": "prj_1" }
+}
