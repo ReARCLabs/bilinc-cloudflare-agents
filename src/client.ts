@@ -354,6 +354,7 @@ export function createClient(config: ClientConfig): BilincClient {
     status: () => run("status", "free", { method: "GET", path: "/status" }, map.status),
 
     async commit(i) {
+      if (i.sessionId != null && typeof i.sessionId !== "string") throw invalid("commit", "sessionId", "type");
       const trimmed = i.sessionId?.trim();
       const sessionId = !trimmed
         ? undefined
@@ -372,7 +373,8 @@ export function createClient(config: ClientConfig): BilincClient {
       );
     },
 
-    recall(i) {
+    async recall(i) {
+      if (typeof i?.query !== "string") throw invalid("recall", "query", "required");
       return run(
         "recall",
         "recall",

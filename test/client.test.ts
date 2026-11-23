@@ -299,6 +299,9 @@ describe("client-side validation: never sent", () => {
     ["listSnapshots limit 0", (c) => c.listSnapshots({ limit: 0 }), "listSnapshots", "limit", "range"],
     ["listSnapshots limit 101", (c) => c.listSnapshots({ limit: 101 }), "listSnapshots", "limit", "range"],
     ["listSnapshots limit 1.5", (c) => c.listSnapshots({ limit: 1.5 }), "listSnapshots", "limit", "range"],
+    ["recall query not a string", (c) => c.recall({ query: 42 as unknown as string }), "recall", "query", "required"],
+    ["recall query missing", (c) => c.recall({} as { query: string }), "recall", "query", "required"],
+    ["commit sessionId not a string", (c) => c.commit({ key: "k", value: "v", sessionId: 7 as unknown as string }), "commit", "sessionId", "type"],
   ];
 
   it.each(cases)("%s", async (_name, call, op, field, reason) => {
