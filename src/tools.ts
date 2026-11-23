@@ -238,7 +238,7 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
     }),
 
     bilinc_rollback_preview: tool({
-      description: `Preview rolling the whole Bilinc memory project back to a checkpoint: counts and keys that would be created, updated or removed. Nothing changes. The counts cover the whole project; the key lists show only this agent's entries, and outsideNamespace counts the listed keys left out because they belong to other agents. Returns a previewId for bilinc_rollback, valid for 5 minutes. Free. ${PICK_CHECKPOINT}`,
+      description: `Preview rolling the whole Bilinc memory project back to a checkpoint: counts and keys that would be created, updated or removed. Nothing changes. The counts cover the whole project; the key lists show only this agent's entries, and outsideNamespace counts the listed keys left out: other agents' entries, and stored keys that bilinc_history and bilinc_forget cannot take. Returns a previewId for bilinc_rollback, valid for 5 minutes. Free. ${PICK_CHECKPOINT}`,
       inputSchema: z.object({
         snapshotId: z.string().describe("Checkpoint id from bilinc_checkpoint or bilinc_checkpoints"),
         reason: z.string().min(1).max(MAX_REASON_CHARS).describe("Why the rollback is wanted"),

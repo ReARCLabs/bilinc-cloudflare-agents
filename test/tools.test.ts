@@ -97,6 +97,13 @@ describe("bilincTools()", () => {
     expect(tools.bilinc_diff?.description).toContain(PICK);
     expect(tools.bilinc_rollback_preview?.description).toContain(PICK);
   });
+
+  it("says what outsideNamespace counts on rollback preview: every listed key left out, not only other agents' keys", () => {
+    const { tools } = setup();
+    expect(tools.bilinc_rollback_preview?.description).toContain(
+      "outsideNamespace counts the listed keys left out: other agents' entries, and stored keys that bilinc_history and bilinc_forget cannot take",
+    );
+  });
 });
 
 describe("bilinc_checkpoint", () => {
