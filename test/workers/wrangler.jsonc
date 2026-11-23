@@ -1,0 +1,5 @@
+{
+  "name": "bilinc-cloudflare-agents-fetch-init-test",
+  "compatibility_date": "2026-08-15",
+  "compatibility_flags": ["nodejs_compat"]
+}
