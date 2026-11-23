@@ -219,7 +219,7 @@ class BilincError extends Error {
 | A write that may or may not have been applied | outcome unknown; check history before trying again |
 | Bilinc down, slow or unreachable | Bilinc memory is unavailable right now |
 
-Reads are retried at most twice (after 200 ms and 600 ms), except after Bilinc's maintenance page (a 503 with `Retry-After`), which opens the circuit breaker for that time instead. Recall is never retried. A write is never retried after a timeout or a network error, because it may already have been applied. Three failures in a row, or an invalid key or exhausted credits, open a circuit breaker for 60 seconds. `get()` and `search()` never throw.
+Reads are retried at most twice (after 200 ms and 600 ms), except after Bilinc's maintenance page (a 503 with a `Retry-After` of at least one second), which opens the circuit breaker for that time instead; `Retry-After: 0` counts as no header. Recall is never retried. A write is never retried after a timeout or a network error, because it may already have been applied. Three failures in a row, or an invalid key or exhausted credits, open a circuit breaker for 60 seconds. `get()` and `search()` never throw.
 
 ## Single-tenant only
 

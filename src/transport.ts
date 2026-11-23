@@ -30,7 +30,7 @@ export interface AttemptFailure {
   status: number;
   requestId?: string;
   details?: unknown;
-  /** Only on a non-JSON 503 with a numeric Retry-After: the breaker open time, already capped. */
+  /** Only on a non-JSON 503 with a Retry-After of at least 1 s: the breaker open time, already capped. */
   retryAfterMs?: number;
 }
 
@@ -107,10 +107,11 @@ function parseObject(text: string): Record<string, unknown> | undefined {
   }
 }
 
+/** Whole seconds, at least 1: `Retry-After: 0` asks for no wait, so it is treated as absent. */
 function retryAfterMs(response: Response): number | undefined {
   if (response.status !== 503) return undefined;
   const raw = response.headers.get("Retry-After")?.trim();
-  if (!raw || !/^\d{1,7}$/.test(raw)) return undefined;
+  if (!raw || !/^\d{1,7}$/.test(raw) || Number(raw) < 1) return undefined;
   return Math.min(Number(raw) * 1000, BREAKER_RETRY_AFTER_CAP_MS);
 }
 

@@ -159,8 +159,8 @@ describe("UnlockScreen", () => {
     expect(await screen.findByText(TOKEN_TOO_SHORT_TEXT)).toBeTruthy();
   });
 
-  it("falls back to the 600-second wait after a 429 with no or an empty Retry-After", async () => {
-    for (const headers of [{}, { "Retry-After": "" }] as Record<string, string>[]) {
+  it("falls back to the 600-second wait after a 429 with no, an empty, a zero or a malformed Retry-After", async () => {
+    for (const headers of [{}, { "Retry-After": "" }, { "Retry-After": "0" }, { "Retry-After": "0.5" }, { "Retry-After": "-5" }, { "Retry-After": "0x10" }] as Record<string, string>[]) {
       mockFetch(() => new Response('{"error":"too_many_attempts"}', { status: 429, headers }));
       render(<UnlockScreen gate="locked" onUnlocked={() => {}} />);
       await submit("wrong-passphrase-0000");

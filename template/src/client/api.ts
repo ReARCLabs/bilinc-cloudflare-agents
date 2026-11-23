@@ -28,6 +28,17 @@ export async function fetchHealth(): Promise<{ gate: GateState; state?: BilincHe
   return { gate: "unlocked", state: isHealthState(body?.state) ? body.state : undefined };
 }
 
+/**
+ * Whole seconds, at least 1, or undefined so the 600 s fallback shows. A missing, empty, zero or
+ * malformed header ("0.5", "-5", "0x10", which Number() would accept) never reads "Try again in 0 seconds".
+ */
+function retryAfterSeconds(res: Response): number | undefined {
+  const raw = res.headers.get("Retry-After")?.trim();
+  if (!raw || !/^\d{1,7}$/.test(raw)) return undefined;
+  const seconds = Number(raw);
+  return seconds >= 1 ? seconds : undefined;
+}
+
 export type UnlockResult = { ok: boolean; gate: GateState; retryAfterSeconds?: number; serverError?: true };
 
 /** Only a 401 means the passphrase was wrong; any other unexpected status is the agent's error (`serverError`). */
@@ -40,11 +51,7 @@ export async function unlock(passphrase: string): Promise<UnlockResult> {
   });
   if (res.ok) return { ok: true, gate: "unlocked" };
   if (await isTokenTooShort(res)) return { ok: false, gate: "token_too_short" };
-  if (res.status === 429) {
-    // A missing or empty header would be Number("") === 0; leave it undefined so the 600 s fallback shows.
-    const retryAfterSeconds = Number(res.headers.get("Retry-After")?.trim() || NaN);
-    return { ok: false, gate: "too_many_attempts", retryAfterSeconds: Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : undefined };
-  }
+  if (res.status === 429) return { ok: false, gate: "too_many_attempts", retryAfterSeconds: retryAfterSeconds(res) };
   if (res.status === 401) return { ok: false, gate: "locked" };
   return { ok: false, gate: "locked", serverError: true };
 }

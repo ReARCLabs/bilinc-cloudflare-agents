@@ -71,6 +71,16 @@ describe("free reads", () => {
     expect(m.fn).toHaveBeenCalledTimes(1);
   });
 
+  it("are retried after a non-JSON 503 with Retry-After: 0, which is no wait and is treated as absent", async () => {
+    const m = mockFetch(html(503, { "Retry-After": "0" }), LIST_OK);
+    const { client, guard } = makeClient();
+    const p = settle(client.list());
+    await vi.advanceTimersByTimeAsync(200);
+    expect((await p).ok).toBe(true);
+    expect(m.fn).toHaveBeenCalledTimes(2);
+    expect(guard.state()).toMatchObject({ open: false, failures: 0 });
+  });
+
   it.each<[string, Responder]>([
     ["capability_unavailable", apiError(503, "capability_unavailable")],
     ["a JSON 4xx", apiError(404, "memory_not_found")],
