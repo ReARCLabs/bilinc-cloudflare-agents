@@ -120,8 +120,9 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
     const stillThere = [];
     for (const key of leftover) {
       try {
-        await client.forget({ key, reason: `gate: cleanup ${runId}` });
-        removed += 1;
+        // removed:false means there was nothing to remove: neither forgotten by this cleanup nor still there.
+        const result = await client.forget({ key, reason: `gate: cleanup ${runId}` });
+        if (result?.removed === true) removed += 1;
       } catch (error) {
         if (!(isError(error) && error.code === 'memory_not_found')) stillThere.push(`${key} (${abortDetail(error)})`);
       }
@@ -214,10 +215,18 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
     const refusedKey = `${prefix}gate-${runId}-refused`;
     const otherKey = `cf.${GATE_NAMESPACE}b.gate-${runId}-other`;
     const sessionId = `gate-${runId}`;
-    const commit = (key, value, namespace = GATE_NAMESPACE) => {
+    const commit = async (key, value, namespace = GATE_NAMESPACE) => {
       // Added before the call: a commit that fails without a definite answer may still have been applied.
+      const addedNow = !leftover.has(key);
       leftover.add(key);
-      return client.commit({ key, value, source: 'cloudflare-agent', sessionId, metadata: { agentId: 'gate', namespace } });
+      try {
+        return await client.commit({ key, value, source: 'cloudflare-agent', sessionId, metadata: { agentId: 'gate', namespace } });
+      } catch (error) {
+        // A definite refusal wrote nothing, so a key this call added is not left behind. A key written
+        // earlier in the run stays, and so does one whose failure is not a definite Bilinc answer.
+        if (addedNow && isError(error) && error.outcomeUnknown === false) leftover.delete(key);
+        throw error;
+      }
     };
 
     const listed = await measured('list', 0, () => client.list({ prefix, order: 'newest', values: 'none', limit: 10 }));

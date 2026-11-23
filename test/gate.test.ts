@@ -7,12 +7,14 @@ import { installShapeRecorder, runGate, secretSamples } from '../scripts/gate.mj
 class FakeBilincError extends Error {
   readonly code: string;
   readonly status: number;
+  readonly outcomeUnknown: boolean;
   readonly requestId = 'req-fake';
 
-  constructor(code: string, status: number) {
+  constructor(code: string, status: number, outcomeUnknown = false) {
     super(code);
     this.code = code;
     this.status = status;
+    this.outcomeUnknown = outcomeUnknown;
   }
 }
 
@@ -344,6 +346,57 @@ describe('runGate against a fake Bilinc', () => {
       detail: `forgot ${removed} keys this run left behind`,
     });
     expect((await fake.bilinc.client.list({})).total).toBe(0);
+  });
+
+  it('does not try to forget a key whose commit was definitely refused (the secret_detected key was never written)', async () => {
+    const fake = fakeBilinc();
+    fake.bilinc.client.rollbackPreview = () => Promise.reject(new FakeBilincError('cloud_runtime_unavailable', 503));
+    const forget = vi.spyOn(fake.bilinc.client, 'forget');
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'rc4', sleep: fake.sleep, log: quiet });
+    expect(forget.mock.calls.map(([input]) => input.key)).not.toContain('cf.gate.gate-rc4-refused');
+    expect(report.results.find((result) => result.id === 'cleanup')?.detail).toBe('forgot 3 keys this run left behind');
+  });
+
+  it('keeps a key whose commit got no definite answer, or threw something that is not a Bilinc answer', async () => {
+    const fake = fakeBilinc();
+    const commit = fake.bilinc.client.commit.bind(fake.bilinc.client);
+    fake.bilinc.client.commit = (input) =>
+      input.key.endsWith('-refused')
+        ? Promise.reject(new TypeError('socket closed'))
+        : input.key.endsWith('-redacted')
+          ? commit(input).then(() => Promise.reject(new FakeBilincError('mutation_outcome_unknown', 503, true)))
+          : commit(input);
+    fake.bilinc.client.rollbackPreview = () => Promise.reject(new FakeBilincError('cloud_runtime_unavailable', 503));
+    const forget = vi.spyOn(fake.bilinc.client, 'forget');
+    await runGate({ bilinc: fake.bilinc, runId: 'rc5', sleep: fake.sleep, log: quiet });
+    const forgotten = forget.mock.calls.map(([input]) => input.key);
+    expect(forgotten).toContain('cf.gate.gate-rc5-refused');
+    expect(forgotten).toContain('cf.gate.gate-rc5-redacted');
+    expect((await fake.bilinc.client.list({})).total).toBe(0);
+  });
+
+  it('keeps a key written earlier in the run when a later commit to it is definitely refused', async () => {
+    const fake = fakeBilinc();
+    const commit = fake.bilinc.client.commit.bind(fake.bilinc.client);
+    fake.bilinc.client.commit = (input) =>
+      input.value.includes('red') ? Promise.reject(new FakeBilincError('version_conflict', 409)) : commit(input);
+    fake.bilinc.client.rollbackPreview = () => Promise.reject(new FakeBilincError('cloud_runtime_unavailable', 503));
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'rc6', sleep: fake.sleep, log: quiet });
+    expect(report.results.find((result) => result.id === 'cleanup')?.detail).toBe('forgot 3 keys this run left behind');
+    expect((await fake.bilinc.client.list({})).total).toBe(0);
+  });
+
+  it('counts only keys forget really removed: removed false is neither removed nor still there', async () => {
+    const fake = fakeBilinc();
+    fake.bilinc.client.createSnapshot = () => Promise.reject(new FakeBilincError('cloud_runtime_unavailable', 503));
+    fake.bilinc.client.forget = (input) => Promise.resolve({ key: input.key, removed: false });
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'rc7', sleep: fake.sleep, log: quiet });
+    expect(report.results.find((result) => result.id === 'cleanup')).toEqual({
+      id: 'cleanup',
+      item: 'gate',
+      ok: true,
+      detail: 'forgot 0 keys this run left behind',
+    });
   });
 
   it('forgets the keys this run left when it aborts', async () => {
