@@ -8,8 +8,9 @@ import {
 
 const encoder = new TextEncoder();
 
+/** Whitespace at either end does not count toward the minimum; the passphrase itself is still compared exactly as set. */
 export function isTokenLongEnough(token: string | undefined): boolean {
-  return typeof token === "string" && token.length >= MIN_ACCESS_TOKEN_LENGTH;
+  return typeof token === "string" && token.trim().length >= MIN_ACCESS_TOKEN_LENGTH;
 }
 
 export function clientIp(request: Request): string {

@@ -68,6 +68,16 @@ describe("helpers", () => {
     expect(isTokenLongEnough("x".repeat(16))).toBe(true);
   });
 
+  it("does not count whitespace at either end toward the minimum, and compares the passphrase exactly as set", async () => {
+    expect(isTokenLongEnough(" ".repeat(16))).toBe(false);
+    expect(isTokenLongEnough(`${"x".repeat(15)} `)).toBe(false);
+    expect(isTokenLongEnough(`\n${"x".repeat(15)}\t`)).toBe(false);
+    expect(isTokenLongEnough(`  ${"x".repeat(16)}  `)).toBe(true);
+    const padded = `  ${"x".repeat(16)}  `;
+    expect(await passphraseMatches(padded, padded)).toBe(true);
+    expect(await passphraseMatches("x".repeat(16), padded)).toBe(false);
+  });
+
   it("reads CF-Connecting-IP or falls back to unknown", () => {
     expect(clientIp(new Request("https://a.test", { headers: { "CF-Connecting-IP": "203.0.113.9" } }))).toBe("203.0.113.9");
     expect(clientIp(new Request("https://a.test"))).toBe("unknown");
