@@ -264,6 +264,25 @@ describe("search()", () => {
     expect(text.match(/<<<entry/g)).toHaveLength(2);
   });
 
+  it("skips a hit that does not fit and still shows smaller hits after it, counting only the skipped ones", async () => {
+    mockFetch(ok({ results: [hit("cf.default.a", "a".repeat(100)), hit("cf.default.b", "b".repeat(950)), hit("cf.default.c", "c".repeat(100))] }));
+    const text = (await setup({ maxChars: 1000 }).provider.search("q")) ?? "";
+    expect(text.length).toBeLessThanOrEqual(1000);
+    expect(text).toContain("<<<entry key=a ");
+    expect(text).toContain("<<<entry key=c ");
+    expect(text).not.toContain("<<<entry key=b ");
+    expect(text).toMatch(/\n1 more omitted$/);
+  });
+
+  it("after a skip, keeps room for the footer even for the last hit, so '<N> more omitted' is never cut", async () => {
+    // a fits; b does not; c fits in maxChars but not in maxChars minus the footer room.
+    mockFetch(ok({ results: [hit("cf.default.a", "a".repeat(100)), hit("cf.default.b", "b".repeat(950)), hit("cf.default.c", "c".repeat(720))] }));
+    const text = (await setup({ maxChars: 1000 }).provider.search("q")) ?? "";
+    expect(text.length).toBeLessThanOrEqual(1000);
+    expect(text.match(/<<<entry/g)).toHaveLength(1);
+    expect(text).toMatch(/\n2 more omitted$/);
+  });
+
   it("leaves out v= for a missing or empty version (nothing to pass to bilinc_forget) and prints unknown for a missing date", async () => {
     mockFetch(ok({ results: [hit("cf.default.a", "A", { entry_version: null, updated_at: null }), hit("cf.default.b", "B", { entry_version: "<<<>>> " })] }));
     const text = await setup().provider.search("q");

@@ -47,13 +47,16 @@ function renderHit(hit: RecallHit, suffix: string): string {
   return `<<<entry key=${suffix}${version ? ` v=${version}` : ""} updated=${updated}\n${value}\n>>>`;
 }
 
+/** A hit that does not fit is skipped, not the end: a smaller hit after it may still fit. */
 function renderHits(hits: { hit: RecallHit; suffix: string }[], maxChars: number): string {
   let out = SEARCH_HEADER;
   let shown = 0;
   for (const [index, { hit, suffix }] of hits.entries()) {
     const block = renderHit(hit, suffix);
-    const room = index === hits.length - 1 ? maxChars : maxChars - FOOTER_RESERVE;
-    if (out.length + 1 + block.length > room) break;
+    // The footer can be left out only when this is the last hit and none was skipped before it.
+    const footerNeeded = index < hits.length - 1 || shown < index;
+    const room = footerNeeded ? maxChars - FOOTER_RESERVE : maxChars;
+    if (out.length + 1 + block.length > room) continue;
     out += `\n${block}`;
     shown += 1;
   }
