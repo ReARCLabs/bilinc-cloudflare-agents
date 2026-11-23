@@ -177,6 +177,19 @@ describe("bilinc_diff", () => {
     });
   });
 
+  it("lists only keys bilinc_history and bilinc_forget accept: a suffix that is not an SDK key is left out", async () => {
+    mockFetch(
+      json(200, {
+        ...diffFixture,
+        added: [{ key: "cf.default.new-fact" }, { key: "cf.default.Upper_Case" }, { key: "cf.default." }],
+        modified: [{ key: "cf.default.nested.key" }],
+        removed: [{ key: `cf.default.${"a".repeat(129)}` }],
+      }),
+    );
+    const result = await run<Record<string, unknown>>(setup().tools, "bilinc_diff", { snapshotId: "snap_20261123_a1" });
+    expect(result).toMatchObject({ counts: { added: 1, modified: 0, removed: 0 }, added: ["new-fact"], modified: [], removed: [] });
+  });
+
   it("marks the counts partial when Bilinc cut the key lists short (its own counts are project-wide)", async () => {
     mockFetch(json(200, { ...diffFixture, counts: { added: 900, modified: 2, removed: 1 }, truncated: true }));
     const result = await run<Record<string, unknown>>(setup().tools, "bilinc_diff", { snapshotId: "snap_20261123_a1" });

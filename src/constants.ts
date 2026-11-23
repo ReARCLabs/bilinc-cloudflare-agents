@@ -6,6 +6,12 @@ export const DEFAULT_NAMESPACE = "default";
 /** Stored key = cf.<namespace>.<sdkKey>. */
 export const KEY_PREFIX = (ns: string): string => `cf.${ns}.`;
 export const SDK_KEY_RE = /^[a-z0-9-]{1,128}$/;
+/** The SDK key under `prefix`, or null for a key that is not ours or not an SDK key. */
+export function ownSuffix(key: string, prefix: string): string | null {
+  if (!key.startsWith(prefix)) return null;
+  const suffix = key.slice(prefix.length);
+  return SDK_KEY_RE.test(suffix) ? suffix : null;
+}
 export const SNAPSHOT_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
 
 export const SOURCE = "cloudflare-agent";

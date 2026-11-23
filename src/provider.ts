@@ -1,6 +1,6 @@
 import type { ContextConfig } from "agents/context";
 import type { BilincClient, BilincProfile, CommitResult, RecallHit } from "./client";
-import { DEFAULT_LABEL, MAX_QUERY_CHARS, MAX_VALUE_CHARS, RECALL_LIMIT, SDK_KEY_RE, SOURCE, SUMMARY_LIST_LIMIT } from "./constants";
+import { DEFAULT_LABEL, MAX_QUERY_CHARS, MAX_VALUE_CHARS, RECALL_LIMIT, SDK_KEY_RE, SOURCE, SUMMARY_LIST_LIMIT, ownSuffix } from "./constants";
 import { NOTICES, noticeFor } from "./errors";
 
 const STATIC_LINE = "Long-term memory is stored in Bilinc; use search_context to look things up";
@@ -37,13 +37,6 @@ export function stripDelimiters(text: string): string {
   let out = text;
   while (out.includes("<<<") || out.includes(">>>")) out = out.replaceAll("<<<", "").replaceAll(">>>", "");
   return out;
-}
-
-/** The SDK key under our prefix, or null for a key that is not ours or not an SDK key. */
-function ownSuffix(key: string, prefix: string): string | null {
-  if (!key.startsWith(prefix)) return null;
-  const suffix = key.slice(prefix.length);
-  return SDK_KEY_RE.test(suffix) ? suffix : null;
 }
 
 function renderHit(hit: RecallHit, suffix: string): string {

@@ -10,6 +10,7 @@ import {
   SDK_KEY_RE,
   SNAPSHOT_LIST_DEFAULT,
   SNAPSHOT_LIST_MAX,
+  ownSuffix,
 } from "./constants";
 import type { Bilinc } from "./create";
 import { NOTICES, isBilincError, noticeFor } from "./errors";
@@ -151,7 +152,8 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
       execute: async ({ snapshotId }) => {
         try {
           const diff = await client.diff({ fromSnapshotId: snapshotId, includeValues: false });
-          const own = (keys: string[]) => keys.filter((key) => key.startsWith(prefix)).map((key) => key.slice(prefix.length));
+          // The same rule as bilinc_history and bilinc_forget, so every listed key is one they accept.
+          const own = (keys: string[]) => keys.flatMap((key) => ownSuffix(key, prefix) ?? []);
           const added = own(diff.added);
           const modified = own(diff.modified);
           const removed = own(diff.removed);
