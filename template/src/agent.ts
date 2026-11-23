@@ -82,7 +82,6 @@ export class BilincAgent extends Think<Env> {
   async runAutoCheckpoint(): Promise<void> {
     try {
       await this.bilinc.client.createSnapshot({ label: AUTO_CHECKPOINT_LABEL_PREFIX + new Date().toISOString() });
-      await this.ctx.storage.put(AUTO_CHECKPOINT_FLAG, "done" satisfies AutoCheckpointFlag);
     } catch (error) {
       try {
         if (isBilincError(error) && error.outcomeUnknown) {
@@ -94,6 +93,21 @@ export class BilincAgent extends Think<Env> {
       } catch {
         // Storage failed too; the next wake decides from whatever flag is stored.
       }
+      return;
     }
+    // The checkpoint exists from here on, so the flag is never deleted: that would make the next wake
+    // create a second one. Try the write twice; if both fail the flag stays "pending", which the next
+    // wake turns into "unknown" without sending anything.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await this.ctx.storage.put(AUTO_CHECKPOINT_FLAG, "done" satisfies AutoCheckpointFlag);
+        return;
+      } catch {
+        // Retried once below.
+      }
+    }
+    console.warn(
+      "[bilinc] automatic checkpoint created, but its flag could not be stored as done; the next wake marks it unknown and creates no second one",
+    );
   }
 }

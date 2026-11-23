@@ -1,7 +1,7 @@
 import { env, evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { getAgentByName } from "agents";
 import type { Bilinc } from "bilinc-cloudflare-agents";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { autoCheckpointEnabled } from "../src/agent";
 import { AUTO_CHECKPOINT_FLAG } from "../src/constants";
 import { bilincError, deferredResponse, htmlPage, installMockBilinc, type MockBilinc } from "./helpers/mock-bilinc";
@@ -107,6 +107,58 @@ describe("automatic checkpoint at chat start", () => {
     });
     expect(flag).toBeUndefined();
     expect(snapshotPosts()).toHaveLength(0);
+  });
+
+  /** Run the checkpoint by hand with storage.put failing for the first `failures` writes of "done". */
+  async function runWithDoneWriteFailing(chatId: string, failures: number): Promise<unknown> {
+    const stub = await getAgentByName(e.BilincAgent, chatId);
+    return runInDurableObject(stub, async (agent, state) => {
+      await state.storage.put(AUTO_CHECKPOINT_FLAG, "pending");
+      const storage = state.storage as unknown as { put(...args: unknown[]): Promise<void> };
+      const realPut = storage.put.bind(state.storage);
+      let left = failures;
+      storage.put = async (...args: unknown[]) => {
+        if (args[0] === AUTO_CHECKPOINT_FLAG && args[1] === "done" && left-- > 0) throw new Error("storage write failed");
+        return realPut(...args);
+      };
+      try {
+        await agent.runAutoCheckpoint();
+      } finally {
+        delete (storage as { put?: unknown }).put;
+      }
+      return state.storage.get(AUTO_CHECKPOINT_FLAG);
+    });
+  }
+
+  it("stores done on the second try when the first write after a created checkpoint fails", async () => {
+    setAgentEnv({ AUTO_CHECKPOINT: "false" });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(await runWithDoneWriteFailing(crypto.randomUUID(), 1)).toBe("done");
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+    expect(snapshotPosts()).toHaveLength(1);
+  });
+
+  it("never deletes the flag after a created checkpoint, so a failed done write does not lead to a second checkpoint", async () => {
+    setAgentEnv({ AUTO_CHECKPOINT: "false" });
+    const chatId = crypto.randomUUID();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(await runWithDoneWriteFailing(chatId, 2)).toBe("pending");
+      expect(warn.mock.calls.map((c) => String(c[0]))).toEqual([
+        "[bilinc] automatic checkpoint created, but its flag could not be stored as done; the next wake marks it unknown and creates no second one",
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+    setAgentEnv({ AUTO_CHECKPOINT: "true" });
+    await wake(chatId);
+    await wake(chatId);
+    expect(await readFlag(chatId)).toBe("unknown");
+    expect(snapshotPosts()).toHaveLength(1);
   });
 
   it("sends nothing when AUTO_CHECKPOINT is false", async () => {
