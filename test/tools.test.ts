@@ -280,6 +280,14 @@ describe("bilinc_forget", () => {
     expect((m.sent[2]?.body as Record<string, unknown>).expectedVersion).toBeUndefined();
   });
 
+  it("an outcome-unknown forget refreshes the prompt, because the entry may be gone", async () => {
+    vi.useFakeTimers();
+    const onMemoryChanged = vi.fn(() => Promise.reject(new Error("refresh failed")));
+    mockFetch(apiError(503, "mutation_outcome_unknown"));
+    expect(await run(setup(onMemoryChanged).tools, "bilinc_forget", { key: "a", reason: "r" })).toBe("outcome unknown; check history before trying again");
+    expect(onMemoryChanged).toHaveBeenCalledTimes(1);
+  });
+
   it("removed: false returns 'not found' and does not refresh", async () => {
     const onMemoryChanged = vi.fn(() => Promise.resolve());
     mockFetch(ok({ key: "cf.default.gone", removed: false }));
@@ -479,10 +487,11 @@ describe("bilinc_rollback", () => {
     expect(map.size).toBe(0);
   });
 
-  it("a sent attempt with no definite answer deletes the preview", async () => {
-    const { tools, map, previewId } = await previewThen(reject);
+  it("a sent attempt with no definite answer deletes the preview and refreshes the prompt, because the rollback may have run", async () => {
+    const { tools, map, previewId, onMemoryChanged } = await previewThen(reject);
     expect(await run(tools, "bilinc_rollback", { previewId })).toBe("outcome unknown; check history before trying again");
     expect(map.size).toBe(0);
+    expect(onMemoryChanged).toHaveBeenCalledTimes(1);
   });
 
   it("a never-sent attempt (circuit open) keeps the preview", async () => {

@@ -90,6 +90,7 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
   const { bilinc, store } = options;
   const { client, prefix } = bilinc;
 
+  /** After a write that may have changed memory: a success, or a sent write with no definite answer. */
   async function memoryChanged(): Promise<void> {
     try {
       await options.onMemoryChanged?.();
@@ -227,6 +228,8 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
           await memoryChanged();
           return { forgotten: true as const, key };
         } catch (error) {
+          // The entry may be gone, so the prompt must not keep listing it as present.
+          if (isBilincError(error) && error.outcomeUnknown) await memoryChanged();
           return noticeFor(error, "forget", { expectedVersion: expectedVersion !== undefined });
         }
       },
@@ -302,6 +305,8 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
           return { rolledBack: true as const, snapshotId: result.snapshotId, counts: result.counts };
         } catch (error) {
           if (!previewStillUsable(error)) await dropPreview(storeKey);
+          // The rollback may have run, so the prompt must not keep the old entry list.
+          if (isBilincError(error) && error.outcomeUnknown) await memoryChanged();
           return noticeFor(error, "rollback");
         }
       },
