@@ -11,36 +11,36 @@ const FAILURES_KEY = "failures";
 export class UnlockLimiter extends DurableObject<Env> {
   async check(): Promise<UnlockVerdict> {
     const now = Date.now();
-    return verdict(await this.recentFailures(now), now);
+    return verdict(this.recentFailures(now), now);
   }
 
   /**
-   * Reserves one failure slot before the passphrase is compared, or answers blocked. Only storage
-   * calls are awaited between the read and the write, so the Durable Object's input gate keeps
-   * parallel attempts from the same IP from reading the same count. A successful unlock then
-   * calls clear(), which releases the slot.
+   * Reserves one failure slot before the passphrase is compared, or answers blocked. The read and
+   * the write use the synchronous KV API with no await between them, so parallel attempts from the
+   * same IP can never read the same count. A successful unlock then calls clear(), which releases
+   * the slot.
    */
   async attempt(): Promise<UnlockVerdict> {
     const now = Date.now();
-    const recent = await this.recentFailures(now);
+    const recent = this.recentFailures(now);
     const current = verdict(recent, now);
     if (current.blocked) return current;
-    await this.ctx.storage.put(FAILURES_KEY, [...recent, now]);
+    this.ctx.storage.kv.put(FAILURES_KEY, [...recent, now]);
     await this.ctx.storage.setAlarm(now + UNLOCK_WINDOW_MS);
     return current;
   }
 
   async clear(): Promise<void> {
+    this.ctx.storage.kv.delete(FAILURES_KEY);
     await this.ctx.storage.deleteAlarm();
-    await this.ctx.storage.deleteAll();
   }
 
   async alarm(): Promise<void> {
     await this.ctx.storage.deleteAll();
   }
 
-  private async recentFailures(now: number): Promise<number[]> {
-    const stored = (await this.ctx.storage.get<number[]>(FAILURES_KEY)) ?? [];
+  private recentFailures(now: number): number[] {
+    const stored = this.ctx.storage.kv.get<number[]>(FAILURES_KEY) ?? [];
     return stored.filter((t) => now - t < UNLOCK_WINDOW_MS).sort((a, b) => a - b);
   }
 }
