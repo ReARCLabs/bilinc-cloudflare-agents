@@ -113,7 +113,7 @@ async function readPassphrase(request: Request): Promise<string | null> {
 
 export async function handleUnlock(request: Request, env: Env): Promise<Response> {
   const limiter = env.UNLOCK_LIMITER.get(env.UNLOCK_LIMITER.idFromName(clientIp(request)));
-  const gate = await limiter.check();
+  const gate = await limiter.attempt();
   if (gate.blocked) {
     return jsonResponse(429, { error: "too_many_attempts" }, { "Retry-After": String(gate.retryAfterSeconds) });
   }
@@ -122,6 +122,6 @@ export async function handleUnlock(request: Request, env: Env): Promise<Response
     await limiter.clear();
     return jsonResponse(200, { ok: true }, { "Set-Cookie": await issueSessionCookie(env.APP_ACCESS_TOKEN) });
   }
-  await limiter.recordFailure();
+  // The failure was already counted by attempt().
   return jsonResponse(401, { error: "invalid_passphrase" });
 }

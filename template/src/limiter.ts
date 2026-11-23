@@ -14,12 +14,20 @@ export class UnlockLimiter extends DurableObject<Env> {
     return verdict(await this.recentFailures(now), now);
   }
 
-  async recordFailure(): Promise<UnlockVerdict> {
+  /**
+   * Reserves one failure slot before the passphrase is compared, or answers blocked. Only storage
+   * calls are awaited between the read and the write, so the Durable Object's input gate keeps
+   * parallel attempts from the same IP from reading the same count. A successful unlock then
+   * calls clear(), which releases the slot.
+   */
+  async attempt(): Promise<UnlockVerdict> {
     const now = Date.now();
-    const failures = [...(await this.recentFailures(now)), now];
-    await this.ctx.storage.put(FAILURES_KEY, failures);
+    const recent = await this.recentFailures(now);
+    const current = verdict(recent, now);
+    if (current.blocked) return current;
+    await this.ctx.storage.put(FAILURES_KEY, [...recent, now]);
     await this.ctx.storage.setAlarm(now + UNLOCK_WINDOW_MS);
-    return verdict(failures, now);
+    return current;
   }
 
   async clear(): Promise<void> {

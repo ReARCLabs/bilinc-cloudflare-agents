@@ -6,13 +6,20 @@ const e = env as unknown as Env;
 const limiterFor = (ip: string) => e.UNLOCK_LIMITER.get(e.UNLOCK_LIMITER.idFromName(ip));
 
 describe("UnlockLimiter", () => {
-  it("blocks at 5 failures inside the window", async () => {
+  it("allows 5 attempts inside the window and blocks the 6th without counting it", async () => {
     const limiter = limiterFor(crypto.randomUUID());
-    for (let i = 0; i < 4; i++) expect((await limiter.recordFailure()).blocked).toBe(false);
-    const fifth = await limiter.recordFailure();
-    expect(fifth.blocked).toBe(true);
-    expect(fifth.retryAfterSeconds).toBeGreaterThan(590);
+    for (let i = 0; i < 5; i++) expect(await limiter.attempt()).toEqual({ blocked: false, retryAfterSeconds: 0 });
+    const sixth = await limiter.attempt();
+    expect(sixth.blocked).toBe(true);
+    expect(sixth.retryAfterSeconds).toBeGreaterThan(590);
     expect(await limiter.check()).toMatchObject({ blocked: true });
+    expect(await runInDurableObject(limiter, (_i, state) => state.storage.get<number[]>("failures"))).toHaveLength(5);
+  });
+
+  it("reserves a slot for each of many parallel attempts, so at most 5 are allowed", async () => {
+    const limiter = limiterFor(crypto.randomUUID());
+    const verdicts = await Promise.all(Array.from({ length: 20 }, () => limiter.attempt()));
+    expect(verdicts.filter((v) => !v.blocked)).toHaveLength(5);
   });
 
   it("ends the block when the oldest of the five is 10 minutes old", async () => {
@@ -33,14 +40,14 @@ describe("UnlockLimiter", () => {
 
   it("clear() forgets the failures", async () => {
     const limiter = limiterFor(crypto.randomUUID());
-    for (let i = 0; i < 5; i++) await limiter.recordFailure();
+    for (let i = 0; i < 5; i++) await limiter.attempt();
     await limiter.clear();
     expect(await limiter.check()).toEqual({ blocked: false, retryAfterSeconds: 0 });
   });
 
   it("schedules an alarm that deletes the counter", async () => {
     const stub = limiterFor(crypto.randomUUID());
-    for (let i = 0; i < 5; i++) await stub.recordFailure();
+    for (let i = 0; i < 5; i++) await stub.attempt();
     const alarmAt = await runInDurableObject(stub, (_i, state) => state.storage.getAlarm());
     expect(alarmAt).toBeGreaterThan(Date.now() + UNLOCK_WINDOW_MS - 5_000);
     expect(await runDurableObjectAlarm(stub)).toBe(true);

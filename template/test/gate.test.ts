@@ -117,6 +117,15 @@ describe("handleUnlock", () => {
     expect((await unlock(PASS, `${ip}-other`)).status).toBe(200);
   });
 
+  it("compares at most 5 of many parallel wrong attempts from one IP and answers 429 to the rest", async () => {
+    const ip = crypto.randomUUID();
+    const results = await Promise.all(Array.from({ length: 20 }, () => unlock("wrong-passphrase-0000", ip)));
+    const statuses = results.map((r) => r.status);
+    expect(statuses.filter((s) => s === 401)).toHaveLength(5);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(15);
+    expect((await unlock(PASS, ip)).status).toBe(429);
+  });
+
   it("clears the count after a successful unlock", async () => {
     const ip = crypto.randomUUID();
     for (let i = 0; i < 4; i++) await unlock("wrong-passphrase-0000", ip);
