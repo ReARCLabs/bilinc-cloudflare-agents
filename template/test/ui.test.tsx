@@ -250,13 +250,13 @@ describe("ToolCard", () => {
     expect(screen.getByText(/cut short/)).toBeTruthy();
   });
 
-  it("says how many listed keys are outside this agent's namespace, and says nothing when there are none", () => {
+  it("says how many listed keys were left out (other agents' entries, keys the tools cannot take), and nothing when there are none", () => {
     render(<ToolCard part={previewPart} />);
-    expect(screen.getByText("Keys outside this agent's namespace, not listed: 1.")).toBeTruthy();
+    expect(screen.getByText("Keys not listed (other agents' entries, or keys these tools cannot take): 1.")).toBeTruthy();
     cleanup();
     const own = { ...previewPart, output: { ...preview, outsideNamespace: 0 } } as unknown as ToolUIPart;
     render(<ToolCard part={own} />);
-    expect(screen.queryByText(/outside this agent's namespace/)).toBeNull();
+    expect(screen.queryByText(/Keys not listed/)).toBeNull();
   });
 
   it("renders the diff counts and keys", () => {

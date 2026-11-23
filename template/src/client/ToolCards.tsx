@@ -10,7 +10,7 @@ export interface RollbackPreviewResult {
   createKeys: string[];
   updateKeys: string[];
   removeKeys: string[];
-  /** Listed keys left out of the lists above because they are outside this agent's namespace. */
+  /** Listed keys left out of the lists above: other agents' entries, and stored keys these tools cannot take. */
   outsideNamespace?: number;
   truncated: boolean;
   expiresAt: string;
@@ -66,7 +66,7 @@ export function PreviewSummary({ preview }: { preview: RollbackPreviewResult }) 
       <KeyList title="Restored" keys={preview.createKeys} />
       <KeyList title="Changed back" keys={preview.updateKeys} />
       <KeyList title="Removed" keys={preview.removeKeys} />
-      {(preview.outsideNamespace ?? 0) > 0 && <p className="note">{`Keys outside this agent's namespace, not listed: ${preview.outsideNamespace}.`}</p>}
+      {(preview.outsideNamespace ?? 0) > 0 && <p className="note">{`Keys not listed (other agents' entries, or keys these tools cannot take): ${preview.outsideNamespace}.`}</p>}
       {preview.truncated && <p className="note">The lists are cut short; the counts are complete.</p>}
       <p className="note">Rollback affects the whole Bilinc project, including other chats.</p>
     </>
