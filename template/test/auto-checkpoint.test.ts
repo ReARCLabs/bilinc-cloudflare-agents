@@ -2,6 +2,7 @@ import { env, evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { getAgentByName } from "agents";
 import type { Bilinc } from "bilinc-cloudflare-agents";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { autoCheckpointEnabled } from "../src/agent";
 import { AUTO_CHECKPOINT_FLAG } from "../src/constants";
 import { bilincError, deferredResponse, htmlPage, installMockBilinc, type MockBilinc } from "./helpers/mock-bilinc";
 import { scriptModel } from "./helpers/mock-model";
@@ -114,6 +115,26 @@ describe("automatic checkpoint at chat start", () => {
     await getAgentByName(e.BilincAgent, chatId);
     await wake(chatId);
     expect(await readFlag(chatId)).toBeUndefined();
+    expect(snapshotPosts()).toHaveLength(0);
+  });
+
+  it("reads AUTO_CHECKPOINT as off for false, 0, off and no in any case and with spaces, and as on otherwise", () => {
+    for (const off of ["false", "FALSE", " False ", "0", "off", "Off", "no", "NO\n", false, 0]) {
+      expect(autoCheckpointEnabled(off), JSON.stringify(off)).toBe(false);
+    }
+    for (const on of [undefined, "", "true", "TRUE", "1", "yes", "on", true, 1, "falsey"]) {
+      expect(autoCheckpointEnabled(on), JSON.stringify(on)).toBe(true);
+    }
+  });
+
+  it("sends nothing when AUTO_CHECKPOINT is written another way of saying off", async () => {
+    for (const off of [" FALSE ", "0", "off", "No", false]) {
+      setAgentEnv({ AUTO_CHECKPOINT: off as unknown as string });
+      const chatId = crypto.randomUUID();
+      await getAgentByName(e.BilincAgent, chatId);
+      await wake(chatId);
+      expect(await readFlag(chatId)).toBeUndefined();
+    }
     expect(snapshotPosts()).toHaveLength(0);
   });
 

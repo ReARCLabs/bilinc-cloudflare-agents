@@ -19,6 +19,16 @@ export function stripWorkspaceLine(system: string): string {
     .join("\n");
 }
 
+const AUTO_CHECKPOINT_OFF = new Set(["false", "0", "off", "no"]);
+
+/**
+ * AUTO_CHECKPOINT is off for "false", "0", "off" or "no", in any case and with spaces at either end,
+ * and on for anything else, unset included. A JSON false or 0 in wrangler vars counts as off too.
+ */
+export function autoCheckpointEnabled(value: unknown): boolean {
+  return !AUTO_CHECKPOINT_OFF.has(String(value ?? "").trim().toLowerCase());
+}
+
 export class BilincAgent extends Think<Env> {
   private _bilinc?: Bilinc;
 
@@ -57,7 +67,7 @@ export class BilincAgent extends Think<Env> {
 
   // A prototype method, never an arrow field: Think binds this.onStart in its constructor.
   override async onStart(): Promise<void> {
-    if (this.env.AUTO_CHECKPOINT === "false") return;
+    if (!autoCheckpointEnabled(this.env.AUTO_CHECKPOINT)) return;
     const flag = await this.ctx.storage.get<AutoCheckpointFlag>(AUTO_CHECKPOINT_FLAG);
     if (flag === undefined) {
       await this.ctx.storage.put(AUTO_CHECKPOINT_FLAG, "pending" satisfies AutoCheckpointFlag);

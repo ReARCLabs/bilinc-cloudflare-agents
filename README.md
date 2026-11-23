@@ -239,7 +239,7 @@ Use one dedicated Bilinc account per deployment. Multi-user apps are not support
 - Titles that share their first 60 characters, or differ only in case, punctuation or non-ASCII characters, overwrite each other. Titles that start with `İ` are the sharpest case: "İş" and "İç" are the same key `i`. Use plain ASCII titles.
 - Entry keys are built from the title, or from the first 60 characters of the text when there is no title, and the newest 10 keys are shown to the model in its system prompt.
 - Rollback needs a checkpoint. Checkpoints are project-wide: the list shows checkpoints from every chat, and a rollback reverts every chat's writes since that checkpoint.
-- The automatic checkpoint runs in the background and can finish a few seconds after a chat opens; a chat whose checkpoint failed may have none. "Checkpoint now" creates one. With `AUTO_CHECKPOINT` set to `"false"`, overwrites made before a manual checkpoint cannot be rolled back.
+- The automatic checkpoint runs in the background and can finish a few seconds after a chat opens; a chat whose checkpoint failed may have none. "Checkpoint now" creates one. With `AUTO_CHECKPOINT` set to `"false"` (or `"0"`, `"off"` or `"no"`, in any case), overwrites made before a manual checkpoint cannot be rolled back.
 - Changing `BILINC_NAMESPACE` starts from an empty memory; entries under the old namespace stay in Bilinc but are no longer visible to the agent.
 - There is no list of past chats; a chat is reached through its URL.
 - Think's workspace file tools are hidden in the template; if you enable them, `write`, `edit` and `delete` run without approval.
