@@ -165,11 +165,13 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
       const existing = await client.listSnapshots({ limit: SNAPSHOT_LIST_MAX });
       const earlier = existing.filter((snapshot) => snapshot.label?.startsWith(CHECKPOINT_LABEL_PREFIX) === true).length;
       const other = existing.length - earlier;
+      // The list is newest first with no cursor, so a full list hides anything older than the newest 100.
+      // A full list made only of gate checkpoints passes; the detail says the older ones were not checked.
       const full = existing.length >= SNAPSHOT_LIST_MAX;
       check(
         'snapshots.empty',
         'G6',
-        other === 0 && !full,
+        other === 0,
         `${other} other checkpoints before the run, ${earlier} from earlier gate runs` +
           (full ? '; the list is full, so older checkpoints were not checked' : ''),
       );

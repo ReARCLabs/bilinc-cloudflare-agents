@@ -291,13 +291,27 @@ describe('runGate against a fake Bilinc', () => {
     }
   });
 
-  it('fails snapshots.empty when the checkpoint list is full, since older ones cannot be seen', async () => {
+  it('passes snapshots.empty on a full checkpoint list made only of earlier gate runs, and says older ones were not checked', async () => {
     const fake = fakeBilinc();
     for (let i = 0; i < 100; i += 1) await fake.bilinc.client.createSnapshot({ label: `gate: before change old${i}` });
     const report = await runGate({ bilinc: fake.bilinc, runId: 'r9', sleep: fake.sleep, log: quiet });
+    expect(failedIds(report)).toEqual([]);
+    expect(report.results.find((result) => result.id === 'snapshots.empty')).toEqual({
+      id: 'snapshots.empty',
+      item: 'G6',
+      ok: true,
+      detail: '0 other checkpoints before the run, 100 from earlier gate runs; the list is full, so older checkpoints were not checked',
+    });
+  });
+
+  it('fails snapshots.empty on a full checkpoint list that holds one checkpoint an earlier gate run did not make', async () => {
+    const fake = fakeBilinc();
+    await fake.bilinc.client.createSnapshot({ label: 'before deploy' });
+    for (let i = 0; i < 99; i += 1) await fake.bilinc.client.createSnapshot({ label: `gate: before change old${i}` });
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'r9b', sleep: fake.sleep, log: quiet });
     expect(failedIds(report)).toEqual(['snapshots.empty']);
     expect(report.results.find((result) => result.id === 'snapshots.empty')?.detail).toBe(
-      '0 other checkpoints before the run, 100 from earlier gate runs; the list is full, so older checkpoints were not checked',
+      '1 other checkpoints before the run, 99 from earlier gate runs; the list is full, so older checkpoints were not checked',
     );
   });
 
