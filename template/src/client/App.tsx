@@ -13,10 +13,12 @@ export function App() {
   const { chatId, startNewChat } = useChatId();
 
   // Called on load, after unlocking, after a failed turn and after a failed connection; never on a timer.
+  // A failed check keeps the screen already shown; on first load it shows the unlock form, whose
+  // unlock re-runs this check, so a visitor is never left on a chat that cannot connect.
   const refresh = useCallback(() => {
     fetchHealth()
       .then(setHealth)
-      .catch(() => setHealth({ gate: "unlocked" }));
+      .catch(() => setHealth((prev) => prev ?? { gate: "locked" }));
   }, []);
   useEffect(refresh, [refresh]);
 

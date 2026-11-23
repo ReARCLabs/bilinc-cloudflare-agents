@@ -185,15 +185,38 @@ describe("App", () => {
     expect(await screen.findByText(TOKEN_TOO_SHORT_TEXT)).toBeTruthy();
   });
 
-  it("treats a 503 from /api/health without the too-short body like any other failed answer", async () => {
-    for (const body of ["<html>Service Unavailable</html>", '{"error":"overloaded"}', ""]) {
-      mockFetch(() => new Response(body, { status: 503 }));
+  it("shows the unlock form, not the chat, when the first /api/health fails with a 500, another 503 or no answer", async () => {
+    const failures: (() => Response)[] = [
+      () => new Response("<html>Service Unavailable</html>", { status: 503 }),
+      () => new Response('{"error":"overloaded"}', { status: 503 }),
+      () => new Response("", { status: 503 }),
+      () => new Response("Internal Server Error", { status: 500 }),
+      () => {
+        throw new TypeError("Failed to fetch");
+      },
+    ];
+    for (const failure of failures) {
+      mockFetch(failure);
       render(<App />);
-      await waitFor(() => expect(hooks.useAgent).toHaveBeenCalled());
+      expect(await screen.findByLabelText("Passphrase")).toBeTruthy();
       expect(screen.queryByText(TOKEN_TOO_SHORT_TEXT)).toBeNull();
+      expect(hooks.useAgent).not.toHaveBeenCalled();
       cleanup();
       vi.clearAllMocks();
     }
+  });
+
+  it("keeps the chat open when the health re-check after a failed connection answers 500", async () => {
+    let calls = 0;
+    mockFetch(() => (++calls === 1 ? new Response('{"state":"ok"}', { status: 200 }) : new Response("oops", { status: 500 })));
+    const { rerender } = render(<App />);
+    await waitFor(() => expect(hooks.useAgent).toHaveBeenCalled());
+    hooks.chat.connectionError = Object.assign(new Error("closed"), { code: 1006, reason: "", wasClean: false });
+    rerender(<App />);
+    await waitFor(() => expect(calls).toBe(2));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByLabelText("Passphrase")).toBeNull();
+    expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
   });
 
   it("shows the banner and connects to the chat named in the hash", async () => {

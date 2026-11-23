@@ -15,12 +15,15 @@ async function isTokenTooShort(res: Response): Promise<boolean> {
   return body?.error === "access_token_too_short";
 }
 
-/** The session cookie is HttpOnly, so this gated call is how the page learns whether it is unlocked. */
+/**
+ * The session cookie is HttpOnly, so this gated call is how the page learns whether it is unlocked.
+ * Any other failed answer (a 500, another 503) says nothing about the session, so it throws like a failed fetch.
+ */
 export async function fetchHealth(): Promise<{ gate: GateState; state?: BilincHealthState }> {
   const res = await fetch("/api/health", { credentials: "same-origin" });
   if (res.status === 401) return { gate: "locked" };
   if (await isTokenTooShort(res)) return { gate: "token_too_short" };
-  if (!res.ok) return { gate: "unlocked" };
+  if (!res.ok) throw new Error(`/api/health answered ${res.status}`);
   const body = (await res.json().catch(() => null)) as { state?: unknown } | null;
   return { gate: "unlocked", state: isHealthState(body?.state) ? body.state : undefined };
 }
