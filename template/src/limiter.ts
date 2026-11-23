@@ -6,6 +6,11 @@ export interface UnlockVerdict {
   retryAfterSeconds: number;
 }
 
+/** attempt()'s answer: `slot` is the timestamp it reserved, or null when it answered blocked. */
+export interface UnlockAttempt extends UnlockVerdict {
+  slot: number | null;
+}
+
 const FAILURES_KEY = "failures";
 
 export class UnlockLimiter extends DurableObject<Env> {
@@ -17,20 +22,34 @@ export class UnlockLimiter extends DurableObject<Env> {
   /**
    * Reserves one failure slot before the passphrase is compared, or answers blocked. The read and
    * the write use the synchronous KV API with no await between them, so parallel attempts from the
-   * same IP can never read the same count. A successful unlock then calls clear(), which releases
-   * the slot.
+   * same IP can never read the same count. A successful unlock then calls release() with the slot
+   * returned here, which frees that slot only.
    */
-  async attempt(): Promise<UnlockVerdict> {
+  async attempt(): Promise<UnlockAttempt> {
     const now = Date.now();
     const recent = this.recentFailures(now);
     const current = verdict(recent, now);
-    if (current.blocked) return current;
+    if (current.blocked) return { ...current, slot: null };
     this.ctx.storage.kv.put(FAILURES_KEY, [...recent, now]);
     await this.ctx.storage.setAlarm(now + UNLOCK_WINDOW_MS);
-    return current;
+    return { ...current, slot: now };
   }
 
-  async clear(): Promise<void> {
+  /**
+   * Frees the one slot attempt() reserved for an unlock that succeeded. Other failures stay
+   * counted, because the bucket may be shared (an IPv4 NAT, an IPv6 /64). Parallel attempts can
+   * share a timestamp, so exactly one matching entry is removed. Synchronous KV again, no await
+   * between the read and the write.
+   */
+  async release(slot: number): Promise<void> {
+    const stored = this.ctx.storage.kv.get<number[]>(FAILURES_KEY) ?? [];
+    const index = stored.indexOf(slot);
+    if (index === -1) return;
+    const rest = [...stored.slice(0, index), ...stored.slice(index + 1)];
+    if (rest.length > 0) {
+      this.ctx.storage.kv.put(FAILURES_KEY, rest);
+      return;
+    }
     this.ctx.storage.kv.delete(FAILURES_KEY);
     await this.ctx.storage.deleteAlarm();
   }

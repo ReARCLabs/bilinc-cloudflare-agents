@@ -159,7 +159,8 @@ export async function handleUnlock(request: Request, env: Env): Promise<Response
   }
   const submitted = await readPassphrase(request);
   if (submitted !== null && (await passphraseMatches(submitted, env.APP_ACCESS_TOKEN))) {
-    await limiter.clear();
+    // Free only this request's slot: earlier failures in the bucket may be someone else's.
+    if (gate.slot !== null) await limiter.release(gate.slot);
     return jsonResponse(200, { ok: true }, { "Set-Cookie": await issueSessionCookie(env.APP_ACCESS_TOKEN) });
   }
   // The failure was already counted by attempt().

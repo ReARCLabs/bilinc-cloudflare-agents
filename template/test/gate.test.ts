@@ -154,10 +154,11 @@ describe("handleUnlock", () => {
     expect((await unlock(PASS, "198.51.100.7")).status).toBe(200);
   });
 
-  it("clears the count after a successful unlock", async () => {
+  it("frees only its own slot after a successful unlock, so earlier failures from the same IP stay counted", async () => {
     const ip = crypto.randomUUID();
-    for (let i = 0; i < 4; i++) await unlock("wrong-passphrase-0000", ip);
+    for (let i = 0; i < 4; i++) expect((await unlock("wrong-passphrase-0000", ip)).status).toBe(401);
     expect((await unlock(PASS, ip)).status).toBe(200);
-    for (let i = 0; i < 5; i++) expect((await unlock("wrong-passphrase-0000", ip)).status).toBe(401);
+    expect((await unlock("wrong-passphrase-0000", ip)).status).toBe(401);
+    expect((await unlock("wrong-passphrase-0000", ip)).status).toBe(429);
   });
 });
