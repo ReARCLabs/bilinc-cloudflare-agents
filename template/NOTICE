@@ -1,0 +1,58 @@
+Bilinc agent for Cloudflare: third-party notices
+
+The template is MIT licensed, Copyright (c) 2026 ReARC Labs Inc. (see LICENSE at the
+repository root). It includes, or is based on, the following.
+
+1. Archivo
+   Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo).
+   SIL Open Font License 1.1. Subset to Latin, weights 400-700, widths 100-118%:
+   src/client/assets/fonts/archivo-latin.woff2. Full licence:
+   src/client/assets/fonts/OFL-Archivo.txt.
+
+2. Azeret Mono
+   Copyright 2021 The Azeret Project Authors (https://github.com/displaay/azeret).
+   SIL Open Font License 1.1. Subset to Latin, weights 400-500:
+   src/client/assets/fonts/azeret-mono-latin.woff2. Full licence:
+   src/client/assets/fonts/OFL-AzeretMono.txt.
+
+3. Phosphor Icons (https://phosphoricons.com)
+   The path data of eight regular-weight icons in src/client/icons.tsx.
+
+   MIT License
+
+   Copyright (c) 2020 Phosphor Icons
+
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included in all
+   copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+4. Kokonut UI (https://kokonutui.com, @kokonutui, MIT)
+   The step list, the composer and the model selector follow the patterns of
+   Kokonut UI's AI Loading, AI Input Search and AI Model Selector components.
+   They were rebuilt from scratch in plain CSS and React; no Kokonut UI code is
+   included. Credit for the patterns goes to Kokonut UI.
+
+5. The pixel-grid "Thinking" indicator was rebuilt from scratch from a
+   description of its behaviour; no third-party code is included.
+
+6. The Bilinc symbol (src/client/assets/bilinc-symbol.png) is Copyright (c)
+   ReARC Labs Inc.
+
+7. Cloudflare and the Cloudflare logo (src/client/assets/cloudflare.svg) are
+   trademarks of Cloudflare, Inc. The logo is shown to say that the agent runs on
+   Cloudflare. This project is not affiliated with or endorsed by Cloudflare. To
+   remove the logo, change AGENT_LINE in src/client/brand.tsx.

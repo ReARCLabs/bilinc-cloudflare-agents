@@ -1,0 +1,92 @@
+/* Archivo and Azeret Mono: SIL OFL 1.1, subset to Latin (see NOTICE). */
+@font-face {
+  font-family: "Archivo";
+  src: url("../assets/fonts/archivo-latin.woff2") format("woff2");
+  font-weight: 400 700;
+  font-stretch: 100% 118%;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Azeret Mono";
+  src: url("../assets/fonts/azeret-mono-latin.woff2") format("woff2");
+  font-weight: 400 500;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  --bg: #070b14;
+  --card: #0e1420;
+  --card2: #111827;
+  --glass: #e8eef2;
+  --g2: rgba(232, 238, 242, 0.62);
+  /* The mockup used .35; .55 keeps small text at WCAG AA contrast (plan gap 8). */
+  --g3: rgba(232, 238, 242, 0.55);
+  --line: rgba(232, 238, 242, 0.11);
+  --added: #5ce1e6;
+  --changed: #e9b45f;
+  --removed: #ff6b57;
+  --recall: #8fb3ff;
+  --sun: #e98a3a;
+  --sans: Archivo, system-ui, sans-serif;
+  --mono: "Azeret Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--glass);
+  font: 14px/1.5 var(--sans);
+  position: relative;
+  isolation: isolate;
+  /* Background A: bilinc.space dusk (night blue to horizon orange). The night world never turns light. */
+  background: linear-gradient(180deg, #0b1a33 0%, #13305a 30%, #1f3f6b 52%, #4a4a6a 70%, #b8664a 86%, #e98a3a 100%) fixed, var(--bg);
+}
+/* The sun glow behind the composer. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: auto 0 0 0;
+  height: 46%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(60% 90% at 50% 100%, rgba(255, 214, 150, 0.55), rgba(233, 138, 58, 0.25) 45%, transparent 75%);
+}
+/* Cloudflare-style dotted (halftone) glow. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: auto 0 0 0;
+  height: 52%;
+  z-index: -1;
+  opacity: 0.55;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(255, 236, 210, 0.55) 1px, transparent 1.4px);
+  background-size: 7px 7px;
+  -webkit-mask-image: radial-gradient(70% 100% at 50% 100%, #000 20%, transparent 70%);
+  mask-image: radial-gradient(70% 100% at 50% 100%, #000 20%, transparent 70%);
+}
+
+button, input, textarea { font: inherit; color: inherit; }
+code, .mono { font-family: var(--mono); }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.loading { text-align: center; padding: 40vh 16px 0; color: var(--g2); }
+
+/* Motion stops; timers keep counting (they are text, not animation). */
+@media (prefers-reduced-motion: reduce) {
+  .spin, .wave span, .pg i, .shake, .mpanel { animation: none !important; }
+  .shim { animation: none !important; background: none !important; color: var(--g2) !important; }
+  .st::after, .thumb, .chev, .chev2, .eg i, .mtrig { transition: none !important; }
+}
