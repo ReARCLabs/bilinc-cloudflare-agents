@@ -4,7 +4,7 @@
 // so it is only a note in the report (notes) and GATE.md records the version read on the server.
 // Runs every BilincClient call against production Bilinc with a key from a DEDICATED test account.
 // On a metered plan it spends 11 credits (10 without --wait-expiry) on that account; on an unmetered plan the same calls are
-// billed as usage events instead. It runs a project-wide rollback, so it refuses a project that already holds entries,
+// counted as usage events instead. It runs a project-wide rollback, so it refuses a project that already holds entries,
 // or a checkpoint that an earlier gate run did not make. A run that ends early forgets the keys it wrote (best effort).
 // Metered and unmetered plans are both supported. The status read at the start of the run decides which; the report's mode
 // field and a NOTE log line record it (it is not a check):
@@ -578,17 +578,8 @@ export async function runGate({
       const caveat =
         'usage is counted per organisation, so other projects can only add to it: this is a lower bound only, and upper bounds ' +
         'and "free calls stay free" cannot be verified on an unmetered plan';
-      let endUsage;
-      let readFailure;
-      try {
-        endUsage = (await readUsage())?.usage;
-      } catch (error) {
-        readFailure = abortDetail(error);
-      }
-      if (readFailure !== undefined) {
-        check('credits.usage-lower-bound', 'G10', false, `could not read status usage at the end: ${readFailure}; ${caveat}`);
-      } else {
-        const growth = Object.keys(DOCUMENTED_UNIT_COSTS).map((eventType) => {
+      const growthOf = (endUsage) =>
+        Object.keys(DOCUMENTED_UNIT_COSTS).map((eventType) => {
           const before = usedOf(startUsage, eventType);
           const after = usedOf(endUsage, eventType);
           const expected = billedCalls[eventType];
@@ -596,6 +587,21 @@ export async function runGate({
             ? { ok: false, text: `${eventType} used missing (at least ${expected})` }
             : { ok: after - before >= expected, text: `${eventType} +${after - before} (at least ${expected})` };
         });
+      let growth;
+      let readFailure;
+      try {
+        growth = growthOf((await readUsage())?.usage);
+        // The counters may lag like the metered balance does, so a short count is read again before it fails.
+        for (let attempt = 1; attempt < CREDIT_SETTLE_ATTEMPTS && !growth.every((row) => row.ok); attempt += 1) {
+          await sleep(CREDIT_SETTLE_DELAY_MS);
+          growth = growthOf((await readUsage())?.usage);
+        }
+      } catch (error) {
+        readFailure = abortDetail(error);
+      }
+      if (readFailure !== undefined) {
+        check('credits.usage-lower-bound', 'G10', false, `could not read status usage at the end: ${readFailure}; ${caveat}`);
+      } else {
         check(
           'credits.usage-lower-bound',
           'G10',
@@ -624,7 +630,8 @@ async function main(argv) {
     console.error(
       'usage: node scripts/gate.mjs <report.json> [--wait-expiry] [--allow-nonempty]\n' +
         'Runs on metered and unmetered plans. On an unmetered plan (credits.availableTotalCredits: null) it checks the unit costs in\n' +
-        'GET /api/cloud/status usage[].creditsEach instead of measuring each call by balance delta.',
+        'GET /api/cloud/status usage[].creditsEach, and that usage[].used grew by at least the calls the run billed (a lower bound\n' +
+        'only: usage is per organisation), instead of measuring each call by balance delta.',
     );
     process.exitCode = 2;
     return;

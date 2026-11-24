@@ -590,6 +590,23 @@ describe('runGate against a fake Bilinc', () => {
     expect(report.results.find((result) => result.id === 'credits.usage-lower-bound')?.detail).toContain('memory_write +55 (at least 5)');
   });
 
+  it('waits for lagging usage counters to settle before failing credits.usage-lower-bound', async () => {
+    const fake = fakeBilinc({ unmetered: true });
+    let reads = 0;
+    let start: Awaited<ReturnType<typeof fake.readUsage>> | undefined;
+    const readUsage = async () => {
+      reads += 1;
+      const raw = await fake.readUsage();
+      if (reads === 1) start = raw;
+      // The first end read still shows the counters of the start.
+      return reads === 2 && start !== undefined ? start : raw;
+    };
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'ru9', sleep: fake.sleep, log: quiet, readUsage });
+    expect(failedIds(report)).toEqual([]);
+    expect(fake.sleeps).toEqual([1_500]);
+    expect(reads).toBe(3);
+  });
+
   it('fails credits.usage-lower-bound, without the key, when the end status read fails', async () => {
     const fake = fakeBilinc({ unmetered: true });
     let reads = 0;
