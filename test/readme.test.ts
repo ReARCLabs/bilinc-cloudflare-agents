@@ -87,7 +87,7 @@ describe('README', () => {
       '| `bilinc_forget` | 1 |',
       '| `bilinc_checkpoint` | 2 |',
       '| `bilinc_rollback` | 2, only when it succeeds |',
-      '| Automatic checkpoint, once per new chat (template; each later wake tries again after a Bilinc server error with a code) | 2 per attempt |',
+      '| Automatic checkpoint, once per new chat (template) | 2 |',
       '| Memory summary, `bilinc_checkpoints`, `bilinc_diff`, `bilinc_history`, `bilinc_rollback_preview`, `checkStatus()` | 0 |',
     ]) {
       expect(text).toContain(row);
