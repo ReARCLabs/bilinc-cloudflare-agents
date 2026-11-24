@@ -103,6 +103,13 @@ describe("deploy configuration", () => {
     for (const entry of [...raw, ...(testWrangler.vars.MODELS as unknown[])]) expect(entry).not.toHaveProperty("tag");
   });
 
+  it("says in the README when a model pick is stored, and which model an approval continues on", () => {
+    const readme = read("README.md");
+    expect(readme).toContain("stored with the next message you send");
+    expect(readme).toContain("An approval continues on the model the turn started with.");
+    expect(readme).not.toContain("so a reload keeps it");
+  });
+
   it("documents every model of MODELS, the notices and the disclaimer in the README", () => {
     const readme = read("README.md");
     for (const model of parseModels(wrangler.vars.MODELS, wrangler.vars.MODEL).models) expect(readme).toContain(`\`${model.id}\``);
