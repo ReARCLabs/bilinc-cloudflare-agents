@@ -3,7 +3,8 @@
 // G5 includes the deployed sidecar version: status.runtime-version checks it when /api/cloud/status reports one; today it does not,
 // so it is only a note in the report (notes) and GATE.md records the version read on the server.
 // Runs every BilincClient call against production Bilinc with a key from a DEDICATED test account.
-// It spends about 11 credits on that account and runs a project-wide rollback, so it refuses a project that already holds entries,
+// On a metered plan it spends 11 credits (10 without --wait-expiry) on that account; on an unmetered plan the same calls are
+// billed as usage events instead. It runs a project-wide rollback, so it refuses a project that already holds entries,
 // or a checkpoint that an earlier gate run did not make. A run that ends early forgets the keys it wrote (best effort).
 // Metered and unmetered plans are both supported. The status read at the start of the run decides which; the report's mode
 // field and a NOTE log line record it (it is not a check):

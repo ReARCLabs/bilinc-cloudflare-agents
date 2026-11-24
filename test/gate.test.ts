@@ -675,6 +675,19 @@ describe('runGate against a fake Bilinc', () => {
     expect(calls.filter((cost) => !/^(null|'(memory_write|recall|snapshot|rollback)')$/.test(cost ?? ''))).toEqual([]);
   });
 
+  it('states in the header what a metered run spends, matching credits.total, and that it is for metered plans only', async () => {
+    const source = readFileSync(fileURLToPath(new URL('../scripts/gate.mjs', import.meta.url)), 'utf8');
+    const header = source.slice(0, source.indexOf('import '));
+    const claim = /On a metered plan it spends (\d+) credits \((\d+) without --wait-expiry\)/.exec(header.replace(/\n\/\/ +/g, ' '));
+    expect(claim).not.toBeNull();
+    const spent = async (waitForExpiry: boolean) => {
+      const fake = fakeBilinc();
+      const report = await runGate({ bilinc: fake.bilinc, runId: 'rh', sleep: fake.sleep, log: quiet, waitForExpiry });
+      return /expected (\d+)$/.exec(report.results.find((result) => result.id === 'credits.total')?.detail ?? '')?.[1];
+    };
+    expect([claim?.[1], claim?.[2]]).toEqual([await spent(true), await spent(false)]);
+  });
+
   it('logs one PASS or FAIL line per check and one NOTE line per note', async () => {
     for (const runtimeVersion of ['2.7.3', null]) {
       const fake = fakeBilinc({ runtimeVersion });
