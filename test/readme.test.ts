@@ -138,4 +138,11 @@ describe('README', () => {
     expect(visible).not.toMatch(/\bofficial\b|\bpartner\b|reference implementation/i);
     expect([...visible.matchAll(/\bfirst\b(?! 60)/gi)]).toEqual([]);
   });
+
+  it('names the same default model as template/wrangler.jsonc', () => {
+    const wrangler = readFileSync(new URL('../template/wrangler.jsonc', import.meta.url), 'utf8');
+    const model = /"MODEL":\s*"([^"]+)"/.exec(wrangler)?.[1];
+    expect(model).toBeDefined();
+    expect(readme).toContain(`The default model is \`${String(model)}\``);
+  });
 });
