@@ -51,7 +51,8 @@ export declare function readStatusUsage(options: {
 }): Promise<{ credits: unknown; usage: unknown }>;
 /**
  * On an unmetered plan (the raw status body has credits.availableTotalCredits: null) calls are not measured by balance delta:
- * credits.unmetered and credits.unit-costs (status usage[].creditsEach against DOCUMENTED_UNIT_COSTS) are recorded instead.
+ * credits.unmetered, credits.unit-costs (status usage[].creditsEach against DOCUMENTED_UNIT_COSTS) and credits.usage-lower-bound
+ * (usage[].used grew by at least this run's billed calls per event type; a lower bound only, as usage is per organisation) are recorded instead.
  * Any other non-number balance, or no credits at all, fails credits.mode and stops the run before it spends anything.
  */
 export declare function runGate(options: {
@@ -61,6 +62,6 @@ export declare function runGate(options: {
   log?: (line: string) => void;
   waitForExpiry?: boolean;
   allowNonEmpty?: boolean;
-  /** Reads the raw status credits and usage[] when status reports no numeric balance; the CLI passes a readStatusUsage() call with its key. */
+  /** Reads the raw status credits and usage[] when status reports no numeric balance, and once more at the end of an unmetered run; the CLI passes a readStatusUsage() call with its key. */
   readUsage?: () => Promise<{ credits: unknown; usage: unknown }>;
 }): Promise<GateReport>;

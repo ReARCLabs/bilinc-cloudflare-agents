@@ -28,7 +28,8 @@ interface FakeOptions {
   runtimeVersion?: string | null;
   /** An unmetered plan: status reports no credit balance, only `usage[].creditsEach`. */
   unmetered?: boolean;
-  usage?: unknown;
+  /** Rewrites the usage[] rows of the raw status body; by default `used` counts every billed call this fake answered. */
+  usage?: (rows: typeof LIVE_USAGE) => unknown;
   /** Rewrites the raw /api/cloud/status body; the client's status() maps the rewritten body as src/client.ts does. */
   rawStatus?: (body: { credits: unknown; usage: unknown }) => unknown;
 }
@@ -54,6 +55,12 @@ function fakeBilinc(options: FakeOptions = {}) {
   const snapshots: { id: string; label: string | null; createdAt: string; totalEntries: number; state: Map<string, string> }[] = [];
   const previews = new Map<string, { snapshotId: string; reason: string; expiresAt: number; used: boolean }>();
   const sleeps: number[] = [];
+  // usage[].used on top of LIVE_USAGE: one per billed call, as status counts it, whatever the plan.
+  const used = { memory_write: 0, recall: 0, snapshot: 0, rollback: 0 };
+  const bill = (eventType: keyof typeof used, cost: number) => {
+    credits -= cost;
+    used[eventType] += 1;
+  };
 
   const findSnapshot = (id: string) => {
     const snapshot = snapshots.find((candidate) => candidate.id === id);
@@ -72,7 +79,7 @@ function fakeBilinc(options: FakeOptions = {}) {
       credits: options.unmetered
         ? { availableTotalCredits: null, monthlyRemainingCredits: null }
         : { availableTotalCredits: credits, monthlyRemainingCredits: credits },
-      usage: options.usage ?? LIVE_USAGE,
+      usage: (options.usage ?? ((rows) => rows))(LIVE_USAGE.map((row) => ({ ...row, used: row.used + used[row.eventType as keyof typeof used] }))),
     };
     return options.rawStatus === undefined ? body : options.rawStatus(body);
   };
@@ -102,14 +109,14 @@ function fakeBilinc(options: FakeOptions = {}) {
     },
     async commit(input) {
       if (/\bghp_[A-Za-z0-9]{36,}/.test(input.value)) throw new FakeBilincError('secret_detected', 422);
-      credits -= 1;
+      bill('memory_write', 1);
       entries.set(input.key, input.value);
       versions.set(input.key, (versions.get(input.key) ?? 0) + 1);
       const warnings = input.value.includes('password=') ? [{ code: 'secret_redacted', rule: 'assignment', field: 'value' }] : [];
       return { entryVersion: `v${versions.get(input.key) ?? 0}`, affectedKeys: [input.key], warnings };
     },
     async recall() {
-      credits -= recallCost;
+      bill('recall', recallCost);
       return [...entries].map(([key, value]) => ({
         key,
         value,
@@ -127,7 +134,7 @@ function fakeBilinc(options: FakeOptions = {}) {
       };
     },
     async createSnapshot(input) {
-      credits -= 2;
+      bill('snapshot', 2);
       seq += 1;
       const snapshot = { id: `snap-${seq}`, label: input?.label ?? null, createdAt: at, totalEntries: entries.size, state: new Map(entries) };
       snapshots.unshift(snapshot);
@@ -165,7 +172,7 @@ function fakeBilinc(options: FakeOptions = {}) {
       }
       if (clock >= preview.expiresAt) throw new FakeBilincError('rollback_confirmation_expired', 410);
       preview.used = true;
-      credits -= 2;
+      bill('rollback', 2);
       const state = findSnapshot(input.snapshotId).state;
       const { added, modified, removed } = compare(state);
       entries.clear();
@@ -174,7 +181,7 @@ function fakeBilinc(options: FakeOptions = {}) {
     },
     async forget(input) {
       if (!entries.has(input.key)) throw new FakeBilincError('memory_not_found', 404);
-      credits -= 1;
+      bill('memory_write', 1);
       entries.delete(input.key);
       return { key: input.key, removed: true };
     },
@@ -496,10 +503,21 @@ describe('runGate against a fake Bilinc', () => {
     expect(report.results.find((result) => result.id === 'credits.unit-costs')?.detail).toContain(
       'memory_write=1 recall=1 snapshot=2 rollback=2',
     );
-    // No per-call balance checks and no total: only the two unmetered checks carry the credits. prefix.
+    // Four commits and forget are memory writes (the refused secret_detected commit is not); one recall, checkpoint and rollback.
+    expect(report.results.find((result) => result.id === 'credits.usage-lower-bound')).toEqual({
+      id: 'credits.usage-lower-bound',
+      item: 'G10',
+      ok: true,
+      detail:
+        'usage[].used grew memory_write +6 (at least 6), recall +1 (at least 1), snapshot +1 (at least 1), rollback +1 (at least 1); ' +
+        'usage is counted per organisation, so other projects can only add to it: this is a lower bound only, and upper bounds ' +
+        'and "free calls stay free" cannot be verified on an unmetered plan',
+    });
+    // No per-call balance checks and no total: only the unmetered checks carry the credits. prefix.
     expect(report.results.map((result) => result.id).filter((id) => id.startsWith('credits.'))).toEqual([
       'credits.unmetered',
       'credits.unit-costs',
+      'credits.usage-lower-bound',
     ]);
     // The run still does all its work, and waits only for the token expiry, never for a balance to settle.
     expect(report.results.map((result) => result.id)).toEqual(
@@ -511,14 +529,57 @@ describe('runGate against a fake Bilinc', () => {
   });
 
   it.each([
-    ['a different creditsEach', LIVE_USAGE.map((row) => (row.eventType === 'snapshot' ? { ...row, creditsEach: 3 } : row)), 'snapshot=3'],
-    ['a missing event type', LIVE_USAGE.filter((row) => row.eventType !== 'rollback'), 'rollback=missing'],
-    ['a usage that is not an array', { recall: 1 }, 'memory_write=missing'],
-  ])('fails credits.unit-costs on %s', async (_name, usage, observed) => {
+    ['a different creditsEach', (rows: typeof LIVE_USAGE) => rows.map((row) => (row.eventType === 'snapshot' ? { ...row, creditsEach: 3 } : row)), 'snapshot=3', []],
+    // Without a rollback row (or any rows) the usage counters cannot be compared either, so the lower bound fails too.
+    ['a missing event type', (rows: typeof LIVE_USAGE) => rows.filter((row) => row.eventType !== 'rollback'), 'rollback=missing', ['credits.usage-lower-bound']],
+    ['a usage that is not an array', () => ({ recall: 1 }), 'memory_write=missing', ['credits.usage-lower-bound']],
+  ])('fails credits.unit-costs on %s', async (_name, usage, observed, alsoFailed) => {
     const fake = fakeBilinc({ unmetered: true, usage });
     const report = await runGate({ bilinc: fake.bilinc, runId: 'ru2', sleep: fake.sleep, log: quiet, readUsage: fake.readUsage });
-    expect(failedIds(report)).toEqual(['credits.unit-costs']);
+    expect(failedIds(report)).toEqual(['credits.unit-costs', ...alsoFailed]);
     expect(report.results.find((result) => result.id === 'credits.unit-costs')?.detail).toContain(observed);
+  });
+
+  it.each([
+    ['counters that never move', () => LIVE_USAGE, 'memory_write +0 (at least 5)'],
+    ['a rollback counter that does not move', (rows: typeof LIVE_USAGE) => rows.map((row) => (row.eventType === 'rollback' ? LIVE_USAGE[3] : row)), 'rollback +0 (at least 1)'],
+    ['a used value that is not a number', (rows: typeof LIVE_USAGE) => rows.map((row) => (row.eventType === 'recall' ? { ...row, used: null } : row)), 'recall used missing (at least 1)'],
+  ])('fails credits.usage-lower-bound on %s', async (_name, usage, detail) => {
+    const fake = fakeBilinc({ unmetered: true, usage });
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'ru6', sleep: fake.sleep, log: quiet, readUsage: fake.readUsage });
+    expect(failedIds(report)).toEqual(['credits.usage-lower-bound']);
+    expect(report.results.find((result) => result.id === 'credits.usage-lower-bound')?.detail).toContain(detail);
+  });
+
+  it('passes credits.usage-lower-bound when other projects of the organisation add usage during the run', async () => {
+    let reads = 0;
+    const fake = fakeBilinc({
+      unmetered: true,
+      usage: (rows) => {
+        reads += 1;
+        return rows.map((row) => ({ ...row, used: row.used + reads * 50 }));
+      },
+    });
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'ru7', sleep: fake.sleep, log: quiet, readUsage: fake.readUsage });
+    expect(failedIds(report)).toEqual([]);
+    expect(report.results.find((result) => result.id === 'credits.usage-lower-bound')?.detail).toContain('memory_write +55 (at least 5)');
+  });
+
+  it('fails credits.usage-lower-bound, without the key, when the end status read fails', async () => {
+    const fake = fakeBilinc({ unmetered: true });
+    let reads = 0;
+    const lines: string[] = [];
+    const report = await runGate({
+      bilinc: fake.bilinc,
+      runId: 'ru8',
+      sleep: fake.sleep,
+      log: (line) => lines.push(line),
+      readUsage: () => (++reads === 1 ? fake.readUsage() : Promise.reject(new TypeError('fetch failed for Bearer bil_live_abc123XYZ'))),
+    });
+    expect(failedIds(report)).toEqual(['credits.usage-lower-bound']);
+    expect(report.results.find((result) => result.id === 'credits.usage-lower-bound')?.detail).toContain('TypeError');
+    expect(JSON.stringify(report)).not.toContain('bil_live_abc123XYZ');
+    expect(lines.join('\n')).not.toContain('bil_live_abc123XYZ');
   });
 
   /** Stopped right after credits.mode failed: nothing written, no checkpoint, nothing spent. */

@@ -9,9 +9,12 @@
 //   (credits.<call> checks) and the run's total by credits.total;
 // - unmetered (the raw status body has credits.availableTotalCredits: null): calls are not measured by balance delta, and no
 //   credits.<call> or credits.total check is made. credits.unmetered records the mode, and credits.unit-costs compares status
-//   usage[].creditsEach with the documented unit costs. Usage counters are per organization, so the gate never diffs them.
+//   usage[].creditsEach with the documented unit costs. Usage counters are per organisation, so other projects can only add to
+//   them: credits.usage-lower-bound checks that each documented event type's usage[].used grew by at least this run's billed
+//   calls of that type, and says that upper bounds and "free calls stay free" cannot be verified this way.
 //   The package client's status() does not expose usage and maps a missing or non-number balance to null, so the gate reads the
-//   raw credits and usage with one GET of /api/cloud/status with the same key; the key is never logged or stored.
+//   raw credits and usage with a GET of /api/cloud/status with the same key (at the start, and at the end of an unmetered run);
+//   the key is never logged or stored.
 // - anything else (credits missing or null, the balance missing, or a value that is neither a number nor null): credits.mode fails
 //   and the run stops before it spends anything.
 // Usage: BILINC_GATE_API_KEY=... node scripts/gate.mjs <report.json> [--wait-expiry] [--allow-nonempty]
@@ -186,6 +189,13 @@ function unitCosts(usage) {
   });
 }
 
+// usage[].used of one event type, or undefined when the row or a numeric used is missing.
+function usedOf(usage, eventType) {
+  const rows = Array.isArray(usage) ? usage.filter((row) => row !== null && typeof row === 'object') : [];
+  const used = rows.find((row) => row.eventType === eventType)?.used;
+  return typeof used === 'number' && Number.isFinite(used) ? used : undefined;
+}
+
 export async function runGate({
   bilinc,
   runId,
@@ -198,6 +208,10 @@ export async function runGate({
   const { client, prefix } = bilinc;
   const results = [];
   let expectedTotal = 0;
+  // Billed calls of this run per usage event type, counted by measured(); the unmetered usage lower bound compares against it.
+  const billedCalls = Object.fromEntries(Object.keys(DOCUMENTED_UNIT_COSTS).map((eventType) => [eventType, 0]));
+  // usage[] of the raw status read at the start of an unmetered run.
+  let startUsage;
   // Set by the status read at the start of the run: an unmetered plan has no balance to measure calls against.
   let unmetered = false;
 
@@ -253,6 +267,9 @@ export async function runGate({
   const measured = async (id, eventType, call) => {
     if (eventType !== null && !Object.hasOwn(DOCUMENTED_UNIT_COSTS, eventType)) throw new Error(`unknown usage event type ${eventType}`);
     const cost = eventType === null ? 0 : DOCUMENTED_UNIT_COSTS[eventType];
+    // The same bookkeeping on both plans: the metered total and the unmetered usage lower bound cannot drift apart.
+    expectedTotal += cost;
+    if (eventType !== null) billedCalls[eventType] += 1;
     if (unmetered) {
       try {
         return { value: await call(), error: undefined };
@@ -260,7 +277,6 @@ export async function runGate({
         return { value: undefined, error: caught };
       }
     }
-    expectedTotal += cost;
     const before = await credits();
     let value;
     let error;
@@ -311,7 +327,8 @@ export async function runGate({
         return finish();
       }
       check('credits.unmetered', 'G10', true, 'plan has no credit balance (unmetered); per-call costs were not measured by balance delta');
-      const costs = unitCosts(raw.usage);
+      startUsage = raw.usage;
+      const costs = unitCosts(startUsage);
       const list = (pairs) => pairs.map(([eventType, each]) => `${eventType}=${each}`).join(' ');
       check(
         'credits.unit-costs',
@@ -543,6 +560,36 @@ export async function runGate({
     if (!unmetered) {
       const endCredits = await credits();
       check('credits.total', 'G10', startCredits - endCredits === expectedTotal, `spent ${startCredits - endCredits}, expected ${expectedTotal}`);
+    } else {
+      // Usage is counted per organisation: other projects can only add to it, so this is a lower bound on what the run billed.
+      const caveat =
+        'usage is counted per organisation, so other projects can only add to it: this is a lower bound only, and upper bounds ' +
+        'and "free calls stay free" cannot be verified on an unmetered plan';
+      let endUsage;
+      let readFailure;
+      try {
+        endUsage = (await readUsage())?.usage;
+      } catch (error) {
+        readFailure = abortDetail(error);
+      }
+      if (readFailure !== undefined) {
+        check('credits.usage-lower-bound', 'G10', false, `could not read status usage at the end: ${readFailure}; ${caveat}`);
+      } else {
+        const growth = Object.keys(DOCUMENTED_UNIT_COSTS).map((eventType) => {
+          const before = usedOf(startUsage, eventType);
+          const after = usedOf(endUsage, eventType);
+          const expected = billedCalls[eventType];
+          return before === undefined || after === undefined
+            ? { ok: false, text: `${eventType} used missing (at least ${expected})` }
+            : { ok: after - before >= expected, text: `${eventType} +${after - before} (at least ${expected})` };
+        });
+        check(
+          'credits.usage-lower-bound',
+          'G10',
+          growth.every((row) => row.ok),
+          `usage[].used grew ${growth.map((row) => row.text).join(', ')}; ${caveat}`,
+        );
+      }
     }
     return finish();
   } catch (error) {
