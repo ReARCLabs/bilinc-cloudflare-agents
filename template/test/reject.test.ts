@@ -5,6 +5,8 @@ import { env, runInDurableObject } from "cloudflare:test";
 import { getAgentByName } from "agents";
 import type { UIMessage } from "ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { ToolUIPart } from "ai";
+import { partSteps } from "../src/client/steps";
 import { rejectedByUserOutput } from "../src/constants";
 import { handleRequest } from "../src/server";
 import { installMockBilinc, type MockBilinc } from "./helpers/mock-bilinc";
@@ -95,5 +97,20 @@ describe("Reject in the UI", () => {
     expect(toolParts(messages, "bilinc_forget")[0]).toMatchObject({ state: "output-available", output: rejectedByUserOutput("keep it, it is right") });
     expect(prompt).toContain("keep it, it is right");
     expect(prompt).toContain("rejected by the user");
+  });
+
+  it("keeps approved: true on the stored output of an approved forget, so the step list shows the approval", async () => {
+    const { chatId, toolCallId } = await pendingForget();
+    const ws = await connect(chatId);
+    ws.send(JSON.stringify({ type: "cf_agent_tool_approval", toolCallId, approved: true, autoContinue: true }));
+    const messages = await waitFor(
+      () => messagesOf(chatId),
+      (msgs) => JSON.stringify(msgs.at(-1)).includes("Understood, I kept it."),
+    );
+    ws.close();
+    const part = toolParts(messages, "bilinc_forget")[0] as unknown as ToolUIPart;
+    expect(part.state).toBe("output-available");
+    expect((part as { approval?: { approved?: boolean } }).approval?.approved).toBe(true);
+    expect(partSteps(part)[0]).toMatchObject({ status: "done", label: 'You approved forgetting "old-fact"' });
   });
 });
