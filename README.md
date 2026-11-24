@@ -172,7 +172,7 @@ const { state } = await checkStatus({ apiKey: env.BILINC_API_KEY, namespace: env
 - `bilinc_forget` and `bilinc_rollback` have `needsApproval: true`: the model proposes, and only a user click runs them.
 - A rollback always previews. `bilinc_rollback` takes only the `previewId` of a preview made in the last 300 seconds; the counts and key lists the user approves come from that preview.
 - The preview's counts cover the whole project. Its key lists, like `bilinc_diff`'s, hold only this namespace's entries, as the keys `bilinc_history` and `bilinc_forget` accept; `outsideNamespace` counts the listed keys left out (other namespaces and apps, and stored keys that are not SDK keys).
-- A rollback that Bilinc refuses before it spends the confirmation token (key, credits, plan or rate limit: 401, 402, 403, 429; or `capability_unavailable`), or that the client never sends, keeps the preview, so the user can approve again. Any other failure drops it, and the model runs a new preview.
+- A rollback that Bilinc refuses before it spends the confirmation token (key, credits, plan or rate limit: 401, 402, 403, 429), or that the client never sends, keeps the preview, so the user can approve again. Any other failure drops it, and the model runs a new preview.
 - The model finds checkpoint ids with `bilinc_checkpoints` (newest at the top, from every chat of the project). The tools never pick "the newest checkpoint" on their own, because a checkpoint taken after a mistake already contains it.
 - After a forget or rollback that succeeded, or that was sent and got no definite answer (it may have run), the tools call `onMemoryChanged`, so removed keys leave the system prompt.
 
