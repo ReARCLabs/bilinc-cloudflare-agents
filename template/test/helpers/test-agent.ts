@@ -3,6 +3,7 @@
 import type { TurnConfig, TurnContext } from "@cloudflare/think";
 import type { LanguageModel } from "ai";
 import { BilincAgent } from "../../src/agent";
+import type { ModelChoice } from "../../src/models";
 import { currentModel } from "./mock-model";
 
 export { UnlockLimiter } from "../../src/limiter";
@@ -17,6 +18,7 @@ interface RecordedTurn {
 interface TestGlobals {
   __bilincTestEnv?: Partial<Env>;
   __bilincTurns?: RecordedTurn[];
+  __bilincChoices?: ModelChoice[];
 }
 const g = globalThis as unknown as TestGlobals;
 
@@ -29,12 +31,19 @@ export function recordedTurns(): RecordedTurn[] {
   return (g.__bilincTurns ??= []);
 }
 
+/** Every validated model choice the agent built a model for, oldest first. */
+export function recordedChoices(): ModelChoice[] {
+  return (g.__bilincChoices ??= []);
+}
+
 export class TestAgent extends BilincAgent {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, { ...env, ...(g.__bilincTestEnv ?? {}) } as Env);
   }
 
-  override getModel(): LanguageModel {
+  /** Records the validated choice and answers with the scripted model instead of Workers AI. */
+  protected override languageModel(choice: ModelChoice): LanguageModel {
+    recordedChoices().push(choice);
     return currentModel();
   }
 

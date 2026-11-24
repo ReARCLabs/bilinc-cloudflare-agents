@@ -1,6 +1,7 @@
-import { Think, type ThinkModel, type ThinkModelId, type TurnConfig, type TurnContext } from "@cloudflare/think";
+import { Think, type ThinkModel, type TurnConfig, type TurnContext } from "@cloudflare/think";
 import type { ContextConfig } from "agents/context";
-import type { ToolSet } from "ai";
+import { createAI, type AI } from "agents/models/ai-sdk";
+import type { LanguageModel, ToolSet } from "ai";
 import { createBilinc, isBilincError, type Bilinc } from "bilinc-cloudflare-agents";
 import { bilincTools } from "bilinc-cloudflare-agents/tools";
 import {
@@ -11,6 +12,7 @@ import {
   WORKSPACE_CAPABILITY_LINE,
   type AutoCheckpointFlag,
 } from "./constants";
+import type { ModelChoice } from "./models";
 
 export function stripWorkspaceLine(system: string): string {
   return system
@@ -41,8 +43,24 @@ export class BilincAgent extends Think<Env> {
     }));
   }
 
+  private _ai?: AI;
+
+  /**
+   * The only place a model is built: createAI from agents/models/ai-sdk, which replaces the
+   * deprecated workers-ai-provider for this agent. Session affinity matches what Think's own
+   * resolver sends. Reasoning effort is sent only when the choice has one: null would mean
+   * "reasoning off", which @cf/openai models do not support. Tests override this method.
+   */
+  protected languageModel(choice: ModelChoice): LanguageModel {
+    const ai = (this._ai ??= createAI({ binding: this.env.AI }));
+    return ai.languageModel(choice.model, {
+      sessionAffinity: this.sessionAffinity,
+      ...(choice.effort ? { reasoningEffort: choice.effort } : {}),
+    });
+  }
+
   override getModel(): ThinkModel {
-    return this.env.MODEL as ThinkModelId;
+    return this.languageModel({ model: this.env.MODEL, effort: null });
   }
 
   override getSystemPrompt(): string {

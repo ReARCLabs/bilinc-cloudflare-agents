@@ -76,4 +76,11 @@ describe("deploy configuration", () => {
       "@ai-sdk/react": "^4.0.0",
     });
   });
+
+  it("builds the model with createAI from agents/models/ai-sdk, not workers-ai-provider", () => {
+    const agent = read("src/agent.ts");
+    expect(agent).toContain('import { createAI, type AI } from "agents/models/ai-sdk";');
+    expect(agent).not.toMatch(/from ["']workers-ai-provider/);
+    expect(Object.keys(pkg.dependencies)).not.toContain("workers-ai-provider");
+  });
 });
