@@ -27,7 +27,10 @@ npm run dev
 
 - **One chat is one Durable Object.** Its id is the `#chat=<uuid>` part of the URL, so reloading or bookmarking returns to the same chat. Opening the bare URL returns to the last chat in this browser. **New chat** starts a fresh one. There is no list of past chats.
 - **Memory is shared by every chat** of the deployment. Entries are stored under `cf.<BILINC_NAMESPACE>.` in your Bilinc project.
-- **Tools.** The model sees nine tools: `search_context` and `set_context` (read and save memory) and seven Bilinc tools: `bilinc_checkpoint`, `bilinc_checkpoints`, `bilinc_diff`, `bilinc_history`, `bilinc_forget`, `bilinc_rollback_preview` and `bilinc_rollback`. Forget and rollback run only after you click **Approve**. **Reject** takes an optional reason, which the agent sees before it answers. Rollback always shows a preview first.
+- **Tools.** The model sees nine tools: `search_context` and `set_context` (read and save memory) and seven Bilinc tools: `bilinc_checkpoint`, `bilinc_checkpoints`, `bilinc_diff`, `bilinc_history`, `bilinc_forget`, `bilinc_rollback_preview` and `bilinc_rollback`. Each tool call shows as a step in the chat. Forget and rollback stop at a step that asks you: click **Forget** or **Roll back** to run them, or **Reject**, with an optional reason that the agent sees before it answers. Rollback always shows a preview first.
+- **Model selector.** The model menu in the message box lists the models in `MODELS`. Your choice, and the reasoning effort for models that take one, is stored per chat, so a reload keeps it. The Worker checks both against `MODELS` on every turn and runs `MODEL` for anything else.
+- **History.** The History button lists the newest 20 checkpoints and the current number of entries (free reads through `GET /api/checkpoints`). Picking one fills the message box with a diff request; nothing is sent until you press **Ask**.
+- **Memory menu.** Type `/` in an empty message box, or click **Memory**, to pick Remember, Recall, Checkpoint, Compare or Roll back. It only fills the message box.
 - **Automatic checkpoint.** Every new chat creates one checkpoint labelled `auto: chat start <date>` in the background, so an overwrite can be rolled back. It costs 2 credits per new chat and may finish a few seconds after the chat opens. If Bilinc did not answer clearly, the chat may have no automatic checkpoint; ask the agent to "checkpoint now" to create one.
 - **Think's workspace file tools are hidden.** The allowlist in `src/constants.ts` (`ACTIVE_TOOLS`) controls what the model can call. If you add `write`, `edit` or `delete` to it, they run without approval.
 
@@ -37,7 +40,8 @@ Set in `wrangler.jsonc` under `vars`:
 
 | Var | Default | Notes |
 |---|---|---|
-| `MODEL` | `@cf/openai/gpt-oss-120b` | Any Workers AI model with function calling. At the pre-publish test (2026-11-24) `@cf/zai-org/glm-4.7-flash` was too slow to answer a chat turn, and `@cf/meta/llama-4-scout-17b-16e-instruct` broke tool calls through `workers-ai-provider` 4.0.1. |
+| `MODEL` | `@cf/openai/gpt-oss-120b` | The default model. It must also be in `MODELS`. |
+| `MODELS` | `gpt-oss-120b`, `gpt-oss-20b`, `llama-4-scout` | The models the selector offers: a JSON array of `{ "id", "label", "note", "tag", "effort" }`. `id` must be a Workers AI id (`@cf/<author>/<model>`); other entries are ignored. `effort` lists the reasoning levels a model takes (`["low", "medium", "high"]` for the gpt-oss models) or is `null`. Shipped models: `@cf/openai/gpt-oss-120b`, `@cf/openai/gpt-oss-20b` and `@cf/meta/llama-4-scout-17b-16e-instruct`. `@cf/zai-org/glm-4.7-flash` is not listed: it was too slow to answer a chat turn at the 0.1.0 gate. With `--var` or `.dev.vars`, pass the same array as a JSON string. |
 | `BILINC_NAMESPACE` | `default` | 1–64 letters, digits, `_` or `-`. Changing it starts from an empty memory: entries under the old namespace stay in Bilinc but the agent no longer sees them. An invalid value stops the chat. |
 | `AUTO_CHECKPOINT` | `true` | `"false"`, `"0"`, `"off"` or `"no"` (in any case, spaces at either end ignored) turns the automatic checkpoint off; any other value leaves it on. Then an overwrite made before a manual checkpoint cannot be rolled back. |
 
@@ -63,4 +67,4 @@ The tests use an in-memory Bilinc and a scripted model, so they need no keys and
 
 ## License
 
-MIT, ReARC Labs Inc.
+MIT, ReARC Labs Inc. Fonts (SIL Open Font License 1.1), icons (Phosphor, MIT) and design credits are listed in [NOTICE](NOTICE).

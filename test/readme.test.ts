@@ -148,4 +148,11 @@ describe('README', () => {
     expect(readme).toContain('![The Bilinc agent asking the user to approve a rollback, with the preview counts](docs/media/demo.png)');
     expect(existsSync(new URL('../docs/media/demo.png', import.meta.url))).toBe(true);
   });
+
+  it('describes the template UI of release 0.1.1', () => {
+    const text = section('Deploy the template');
+    expect(text).toContain('a model selector limited to the `MODELS` allowlist');
+    expect(text).toContain('a History list of checkpoints');
+    expect(text).toContain('approval steps for forget and rollback');
+  });
 });

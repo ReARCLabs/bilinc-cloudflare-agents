@@ -93,4 +93,12 @@ describe("deploy configuration", () => {
     expect(config.models[0]!.id).toBe(wrangler.vars.MODEL);
     for (const model of config.models) expect(["tested", "to test"]).toContain(model.tag);
   });
+
+  it("documents every model of MODELS, the notices and the disclaimer in the README", () => {
+    const readme = read("README.md");
+    for (const model of parseModels(wrangler.vars.MODELS, wrangler.vars.MODEL).models) expect(readme).toContain(`\`${model.id}\``);
+    expect(readme).toContain("| `MODELS` |");
+    expect(readme).toContain("[NOTICE](NOTICE)");
+    expect(readme).toContain("Not affiliated with or endorsed by Cloudflare.");
+  });
 });
