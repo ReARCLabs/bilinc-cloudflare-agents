@@ -22,7 +22,9 @@ export const AUTO_CHECKPOINT_LABEL_PREFIX = "auto: chat start ";
  * output, not "output-error": useAgentChat sends autoContinue false for an error output, so no
  * reply would follow, and an approval response carries no reason to the server.
  */
-export const rejectedByUserOutput = (reason: string) => `not done: rejected by the user, who said: ${reason}`;
+/** Start of every rejection output; the step list reads it to show a rejected approval. */
+export const REJECTED_BY_USER_PREFIX = "not done: rejected by the user";
+export const rejectedByUserOutput = (reason: string) => `${REJECTED_BY_USER_PREFIX}, who said: ${reason}`;
 
 export const AGENT_BINDING = "BilincAgent";
 export const AGENT_PATH_SEGMENT = "bilinc-agent";
