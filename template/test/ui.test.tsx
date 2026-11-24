@@ -283,10 +283,13 @@ describe("App", () => {
     }
     const locked = () => new Response('{"error":"unauthorized"}', { status: 401 });
 
-    it("says the browser did not keep the session when /api/health still answers 401, and keeps the passphrase", async () => {
+    it("says the agent did not accept the new session when /api/health still answers 401, and keeps the passphrase", async () => {
       serve(locked, locked);
       await unlockInApp();
       expect(await screen.findByText(UNLOCKED_NO_SESSION_TEXT)).toBeTruthy();
+      expect(UNLOCKED_NO_SESSION_TEXT).toBe(
+        "The passphrase is right, but the agent did not accept the new session. Allow cookies for this site and try again; if it keeps happening, the access token may have just changed.",
+      );
       expect(screen.queryByText(WRONG_PASSPHRASE_TEXT)).toBeNull();
       expect((screen.getByLabelText("Passphrase") as HTMLInputElement).value).toBe("correct-horse-battery-staple");
       expect(hooks.useAgent).not.toHaveBeenCalled();

@@ -8,7 +8,7 @@ export const SERVER_ERROR_TEXT = "The agent answered with an error. Try again in
 export const tooManyAttemptsText = (seconds?: number) =>
   `Too many wrong attempts from this network. Try again in ${seconds ?? 600} seconds.`;
 export const UNLOCKED_NO_SESSION_TEXT =
-  "The passphrase is right, but this browser did not keep the session cookie. Allow cookies for this site and try again.";
+  "The passphrase is right, but the agent did not accept the new session. Allow cookies for this site and try again; if it keeps happening, the access token may have just changed.";
 export const UNLOCKED_CHECK_FAILED_TEXT =
   "The passphrase is right, but the agent did not answer the check that follows. Try again in a moment.";
 
