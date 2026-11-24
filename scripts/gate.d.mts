@@ -40,17 +40,19 @@ export declare function installShapeRecorder(target?: { fetch: typeof fetch }): 
 /** Writes the report as JSON, readable by its owner only, also when a file is already at that path. A symlink at the path is replaced, not followed. */
 export declare function writeReport(reportPath: string, body: unknown): void;
 /**
- * One raw GET of `<baseUrl>/api/cloud/status` with the Bearer key; resolves to the body's `usage`, which the package client's
- * status() does not expose. A failure names only the HTTP status or the error's name, never the key.
+ * One raw GET of `<baseUrl>/api/cloud/status` with the Bearer key; resolves to the body's raw `credits` and `usage`. The package
+ * client's status() does not expose usage and maps a missing or non-number balance to null; here a field the body lacks is
+ * `undefined`, so null and missing stay apart. A failure names only the HTTP status or the error's name, never the key.
  */
 export declare function readStatusUsage(options: {
   baseUrl: string;
   apiKey: string;
   fetch?: (input: string, init?: RequestInit) => Promise<Response>;
-}): Promise<unknown>;
+}): Promise<{ credits: unknown; usage: unknown }>;
 /**
- * On an unmetered plan (status reports no numeric credits.availableTotalCredits) calls are not measured by balance delta:
+ * On an unmetered plan (the raw status body has credits.availableTotalCredits: null) calls are not measured by balance delta:
  * credits.unmetered and credits.unit-costs (status usage[].creditsEach against DOCUMENTED_UNIT_COSTS) are recorded instead.
+ * Any other non-number balance, or no credits at all, fails credits.mode and stops the run before it spends anything.
  */
 export declare function runGate(options: {
   bilinc: { client: BilincClient; prefix: string };
@@ -59,6 +61,6 @@ export declare function runGate(options: {
   log?: (line: string) => void;
   waitForExpiry?: boolean;
   allowNonEmpty?: boolean;
-  /** Reads status usage[] on an unmetered plan; the CLI passes a readStatusUsage() call with its key. */
-  readUsage?: () => Promise<unknown>;
+  /** Reads the raw status credits and usage[] when status reports no numeric balance; the CLI passes a readStatusUsage() call with its key. */
+  readUsage?: () => Promise<{ credits: unknown; usage: unknown }>;
 }): Promise<GateReport>;

@@ -7,10 +7,13 @@
 // Metered and unmetered plans are both supported. The status read at the start of the run decides which:
 // - metered (a numeric credits.availableTotalCredits, e.g. the Free plan): each call's cost is measured by the balance delta
 //   (credits.<call> checks) and the run's total by credits.total;
-// - unmetered (no credit balance): calls are not measured by balance delta, and no credits.<call> or credits.total check is made.
-//   credits.unmetered records the mode, and credits.unit-costs compares status usage[].creditsEach with the documented unit costs.
-//   Usage counters are per organization, so the gate never diffs them. The package client's status() does not expose usage,
-//   so the gate reads it with one raw GET of /api/cloud/status with the same key; the key is never logged or stored.
+// - unmetered (the raw status body has credits.availableTotalCredits: null): calls are not measured by balance delta, and no
+//   credits.<call> or credits.total check is made. credits.unmetered records the mode, and credits.unit-costs compares status
+//   usage[].creditsEach with the documented unit costs. Usage counters are per organization, so the gate never diffs them.
+//   The package client's status() does not expose usage and maps a missing or non-number balance to null, so the gate reads the
+//   raw credits and usage with one GET of /api/cloud/status with the same key; the key is never logged or stored.
+// - anything else (credits missing or null, the balance missing, or a value that is neither a number nor null): credits.mode fails
+//   and the run stops before it spends anything.
 // Usage: BILINC_GATE_API_KEY=... node scripts/gate.mjs <report.json> [--wait-expiry] [--allow-nonempty]
 import { randomBytes } from 'node:crypto';
 import { chmodSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -128,7 +131,9 @@ export function writeReport(reportPath, body) {
   }
 }
 
-// One raw GET of <baseUrl>/api/cloud/status with the gate's key, for usage[], which the package client's status() drops.
+// One raw GET of <baseUrl>/api/cloud/status with the gate's key. Resolves to the body's raw credits and usage[]: the package
+// client's status() drops usage and maps a missing or non-number balance to null, so only the raw body tells them apart.
+// A credits or usage field the body does not have is undefined (JSON has no undefined, so undefined means missing).
 // A failure names only the HTTP status or the error's name: never the message, URL or headers, so never the key.
 export async function readStatusUsage({ baseUrl, apiKey, fetch: fetchImpl = (...args) => fetch(...args) }) {
   // No `cause` on the thrown error on purpose: the original error's message could hold the key.
@@ -154,7 +159,22 @@ export async function readStatusUsage({ baseUrl, apiKey, fetch: fetchImpl = (...
     failure = errorName(error);
   }
   if (failure !== undefined) throw new Error(`GET /api/cloud/status failed: ${failure}`);
-  return body !== null && typeof body === 'object' ? body.usage : undefined;
+  return body !== null && typeof body === 'object' ? { credits: body.credits, usage: body.usage } : { credits: undefined, usage: undefined };
+}
+
+const kindOf = (value) => {
+  const kind = Array.isArray(value) ? 'array' : typeof value;
+  return `${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind}`;
+};
+
+// Why a raw status read does not show an unmetered plan, or undefined when it does. Only an object credits whose
+// availableTotalCredits is null marks one; a missing field or another value is not read as "no limit". Names types, never values.
+function notUnmetered(raw) {
+  const rawCredits = raw !== null && typeof raw === 'object' ? raw.credits : undefined;
+  if (rawCredits === null || typeof rawCredits !== 'object' || Array.isArray(rawCredits)) return 'status.credits is missing or not an object';
+  if (!Object.hasOwn(rawCredits, 'availableTotalCredits')) return 'status.credits.availableTotalCredits is missing';
+  const value = rawCredits.availableTotalCredits;
+  return value === null ? undefined : `status.credits.availableTotalCredits is ${kindOf(value)}`;
 }
 
 // creditsEach per documented event type, or 'missing'. Only a number counts.
@@ -264,30 +284,42 @@ export async function runGate({
     if (project.total > 0 && !allowNonEmpty) return finish();
 
     const status = await client.status();
+    // A numeric balance is metered. Anything else is unmetered only when the raw body says credits.availableTotalCredits: null;
+    // the client maps a missing or non-number balance to null too, so the run stops on anything else before it spends.
     unmetered = typeof status.credits?.availableTotalCredits !== 'number';
     const startCredits = unmetered ? undefined : await credits();
     if (unmetered) {
-      check('credits.unmetered', 'G10', true, 'plan has no credit balance (unmetered); per-call costs were not measured by balance delta');
-      // The client's status() would carry usage only if a later version maps it; otherwise one raw GET reads it.
-      let usage;
-      let readFailed = false;
+      const stop = 'only credits.availableTotalCredits: null marks an unmetered plan, so the run stopped before spending anything';
+      if (status.credits === null) {
+        check('credits.mode', 'G10', false, `status.credits is missing or not an object; ${stop}`);
+        return finish();
+      }
+      if (typeof readUsage !== 'function') {
+        check('credits.mode', 'G10', false, `status reports no numeric balance and no raw status read was given to tell null from missing; ${stop}`);
+        return finish();
+      }
+      let raw;
       try {
-        usage = Array.isArray(status.usage) ? status.usage : typeof readUsage === 'function' ? await readUsage() : undefined;
+        raw = await readUsage();
       } catch (error) {
-        readFailed = true;
-        check('credits.unit-costs', 'G10', false, `could not read status usage: ${abortDetail(error)}`);
+        check('credits.mode', 'G10', false, `could not read the raw status: ${abortDetail(error)}; ${stop}`);
+        return finish();
       }
-      if (!readFailed) {
-        const costs = unitCosts(usage);
-        const list = (pairs) => pairs.map(([eventType, each]) => `${eventType}=${each}`).join(' ');
-        check(
-          'credits.unit-costs',
-          'G10',
-          costs.every(({ eventType, observed }) => observed === DOCUMENTED_UNIT_COSTS[eventType]),
-          `status usage creditsEach ${list(costs.map(({ eventType, observed }) => [eventType, observed]))}; ` +
-            `documented ${list(Object.entries(DOCUMENTED_UNIT_COSTS))}`,
-        );
+      const reason = notUnmetered(raw);
+      if (reason !== undefined) {
+        check('credits.mode', 'G10', false, `${reason}; ${stop}`);
+        return finish();
       }
+      check('credits.unmetered', 'G10', true, 'plan has no credit balance (unmetered); per-call costs were not measured by balance delta');
+      const costs = unitCosts(raw.usage);
+      const list = (pairs) => pairs.map(([eventType, each]) => `${eventType}=${each}`).join(' ');
+      check(
+        'credits.unit-costs',
+        'G10',
+        costs.every(({ eventType, observed }) => observed === DOCUMENTED_UNIT_COSTS[eventType]),
+        `status usage creditsEach ${list(costs.map(({ eventType, observed }) => [eventType, observed]))}; ` +
+          `documented ${list(Object.entries(DOCUMENTED_UNIT_COSTS))}`,
+      );
     }
     check(
       'status.capabilities',
@@ -531,7 +563,7 @@ async function main(argv) {
   if (reportPath === undefined) {
     console.error(
       'usage: node scripts/gate.mjs <report.json> [--wait-expiry] [--allow-nonempty]\n' +
-        'Runs on metered and unmetered plans. On an unmetered plan (no credit balance) it checks the unit costs in\n' +
+        'Runs on metered and unmetered plans. On an unmetered plan (credits.availableTotalCredits: null) it checks the unit costs in\n' +
         'GET /api/cloud/status usage[].creditsEach instead of measuring each call by balance delta.',
     );
     process.exitCode = 2;
@@ -548,7 +580,7 @@ async function main(argv) {
     sessionId: `gate-${runId}`,
     onError: () => undefined,
   });
-  // Read only on an unmetered plan. Goes through globalThis.fetch at call time, so the shape recorder sees it (key names only).
+  // Read only when status reports no numeric balance. Goes through globalThis.fetch at call time, so the shape recorder sees it (key names only).
   const readUsage = () => readStatusUsage({ baseUrl: GATE_BASE_URL, apiKey: apiKey.trim() });
   let report;
   try {

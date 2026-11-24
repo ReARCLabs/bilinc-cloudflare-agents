@@ -29,6 +29,8 @@ interface FakeOptions {
   /** An unmetered plan: status reports no credit balance, only `usage[].creditsEach`. */
   unmetered?: boolean;
   usage?: unknown;
+  /** Rewrites the raw /api/cloud/status body; the client's status() maps the rewritten body as src/client.ts does. */
+  rawStatus?: (body: { credits: unknown; usage: unknown }) => unknown;
 }
 
 const LIVE_USAGE = [
@@ -64,12 +66,27 @@ function fakeBilinc(options: FakeOptions = {}) {
     removed: [...state.keys()].filter((key) => !entries.has(key)),
   });
 
+  // One raw /api/cloud/status body feeds both the client's status() and the gate's raw read, so they never disagree.
+  const rawBody = (): unknown => {
+    const body = {
+      credits: options.unmetered
+        ? { availableTotalCredits: null, monthlyRemainingCredits: null }
+        : { availableTotalCredits: credits, monthlyRemainingCredits: credits },
+      usage: options.usage ?? LIVE_USAGE,
+    };
+    return options.rawStatus === undefined ? body : options.rawStatus(body);
+  };
+  const isObj = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+  const numOrNull = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
   const client: BilincClient = {
     async status() {
+      const raw = rawBody();
+      const rawCredits = isObj(raw) ? raw.credits : undefined;
       return {
-        credits: options.unmetered
-          ? { availableTotalCredits: null, monthlyRemainingCredits: null }
-          : { availableTotalCredits: credits, monthlyRemainingCredits: credits },
+        credits: isObj(rawCredits)
+          ? { availableTotalCredits: numOrNull(rawCredits.availableTotalCredits), monthlyRemainingCredits: numOrNull(rawCredits.monthlyRemainingCredits) }
+          : null,
         capabilities: { commit: true, recall: true, forget: true, snapshots: true, diff: true, rollback: true, history: true, list: true },
         recallProfiles: ['fast', 'balanced'],
         runtimeVersion: options.runtimeVersion === undefined ? '2.7.3' : options.runtimeVersion,
@@ -167,8 +184,12 @@ function fakeBilinc(options: FakeOptions = {}) {
     sleeps.push(ms);
     clock += ms;
   };
-  // Stands in for the gate's raw GET of /api/cloud/status: the package client's status() does not expose usage.
-  const readUsage = async () => options.usage ?? LIVE_USAGE;
+  // Stands in for the gate's raw GET of /api/cloud/status (readStatusUsage): the package client's status() does not expose
+  // usage, and maps a missing or non-number balance to null, so only the raw body tells null apart from missing.
+  const readUsage = async () => {
+    const raw = rawBody();
+    return isObj(raw) ? { credits: raw.credits, usage: raw.usage } : { credits: undefined, usage: undefined };
+  };
   return { bilinc: { client, prefix: 'cf.gate.' }, sleep, sleeps, readUsage };
 }
 
@@ -500,8 +521,17 @@ describe('runGate against a fake Bilinc', () => {
     expect(report.results.find((result) => result.id === 'credits.unit-costs')?.detail).toContain(observed);
   });
 
-  it('fails credits.unit-costs, without the key, when the status read fails on an unmetered plan', async () => {
+  /** Stopped right after credits.mode failed: nothing written, no checkpoint, nothing spent. */
+  const expectStoppedBeforeSpending = async (fake: ReturnType<typeof fakeBilinc>, report: { results: { id: string; ok: boolean }[] }) => {
+    expect(failedIds(report)).toEqual(['credits.mode']);
+    expect(report.results.map((result) => result.id)).toEqual(['project.empty', 'credits.mode']);
+    expect((await fake.bilinc.client.list({})).total).toBe(0);
+    expect(await fake.bilinc.client.listSnapshots({ limit: 100 })).toEqual([]);
+  };
+
+  it('fails credits.mode and stops, without the key, when the raw status read fails', async () => {
     const fake = fakeBilinc({ unmetered: true });
+    const commit = vi.spyOn(fake.bilinc.client, 'commit');
     const lines: string[] = [];
     const report = await runGate({
       bilinc: fake.bilinc,
@@ -510,9 +540,45 @@ describe('runGate against a fake Bilinc', () => {
       log: (line) => lines.push(line),
       readUsage: () => Promise.reject(new TypeError('fetch failed for Bearer bil_live_abc123XYZ')),
     });
-    expect(failedIds(report)).toEqual(['credits.unit-costs']);
+    await expectStoppedBeforeSpending(fake, report);
+    expect(commit).not.toHaveBeenCalled();
+    expect(report.results.find((result) => result.id === 'credits.mode')?.detail).toContain('TypeError');
     expect(JSON.stringify(report)).not.toContain('bil_live_abc123XYZ');
     expect(lines.join('\n')).not.toContain('bil_live_abc123XYZ');
+  });
+
+  it.each([
+    ['credits missing', () => ({ usage: LIVE_USAGE }), 'status.credits is missing or not an object'],
+    ['credits null', () => ({ credits: null, usage: LIVE_USAGE }), 'status.credits is missing or not an object'],
+    ['credits not an object', () => ({ credits: 'unlimited', usage: LIVE_USAGE }), 'status.credits is missing or not an object'],
+    ['the balance field missing', () => ({ credits: { monthlyRemainingCredits: null }, usage: LIVE_USAGE }), 'status.credits.availableTotalCredits is missing'],
+    ['a string balance', () => ({ credits: { availableTotalCredits: 'unlimited' }, usage: LIVE_USAGE }), 'status.credits.availableTotalCredits is a string'],
+    ['a boolean balance', () => ({ credits: { availableTotalCredits: false }, usage: LIVE_USAGE }), 'status.credits.availableTotalCredits is a boolean'],
+    ['an object balance', () => ({ credits: { availableTotalCredits: {} }, usage: LIVE_USAGE }), 'status.credits.availableTotalCredits is an object'],
+  ])('fails credits.mode and stops before spending anything on %s', async (_name, rawStatus, detail) => {
+    const fake = fakeBilinc({ rawStatus });
+    const commit = vi.spyOn(fake.bilinc.client, 'commit');
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'ru4', sleep: fake.sleep, log: quiet, readUsage: fake.readUsage });
+    await expectStoppedBeforeSpending(fake, report);
+    expect(commit).not.toHaveBeenCalled();
+    const mode = report.results.find((result) => result.id === 'credits.mode');
+    expect(mode).toMatchObject({ item: 'G10', ok: false });
+    expect(mode?.detail).toContain(detail);
+    expect(mode?.detail).toContain('only credits.availableTotalCredits: null marks an unmetered plan');
+  });
+
+  it('fails credits.mode on a null balance when no raw status read is given, since null cannot be told apart from missing', async () => {
+    const fake = fakeBilinc({ unmetered: true });
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'ru5', sleep: fake.sleep, log: quiet });
+    await expectStoppedBeforeSpending(fake, report);
+  });
+
+  it('never reads the raw status on a metered plan', async () => {
+    const fake = fakeBilinc();
+    const readUsage = vi.fn(fake.readUsage);
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'r10', sleep: fake.sleep, log: quiet, readUsage });
+    expect(failedIds(report)).toEqual([]);
+    expect(readUsage).not.toHaveBeenCalled();
   });
 
   it('takes every metered call cost from DOCUMENTED_UNIT_COSTS: no measured() call names a numeric cost', () => {
@@ -574,17 +640,25 @@ describe('installShapeRecorder', () => {
 describe('readStatusUsage', () => {
   const key = 'bil_live_abc123XYZ';
 
-  it('sends one GET of /api/cloud/status with the Bearer key and returns usage', async () => {
+  it('sends one GET of /api/cloud/status with the Bearer key and returns the raw credits and usage', async () => {
     const stub = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(async () =>
-      Response.json({ credits: { availableTotalCredits: null }, usage: LIVE_USAGE }),
+      Response.json({ credits: { availableTotalCredits: null }, usage: LIVE_USAGE, capabilities: { commit: true } }),
     );
-    const usage = await readStatusUsage({ baseUrl: 'https://bilinc.example', apiKey: key, fetch: stub });
-    expect(usage).toEqual(LIVE_USAGE);
+    const raw = await readStatusUsage({ baseUrl: 'https://bilinc.example', apiKey: key, fetch: stub });
+    expect(raw).toEqual({ credits: { availableTotalCredits: null }, usage: LIVE_USAGE });
     expect(stub).toHaveBeenCalledTimes(1);
     const [url, init] = stub.mock.calls[0] ?? [];
     expect(url).toBe('https://bilinc.example/api/cloud/status');
     expect(init?.method).toBe('GET');
     expect(new Headers(init?.headers).get('Authorization')).toBe(`Bearer ${key}`);
+  });
+
+  it('keeps a missing credits field apart from a null one', async () => {
+    const missing = await readStatusUsage({ baseUrl: 'https://bilinc.example', apiKey: key, fetch: async () => Response.json({ usage: [] }) });
+    expect(missing).toEqual({ credits: undefined, usage: [] });
+    expect(Object.hasOwn(missing as object, 'credits') && (missing as { credits: unknown }).credits === null).toBe(false);
+    const notObject = await readStatusUsage({ baseUrl: 'https://bilinc.example', apiKey: key, fetch: async () => Response.json(null) });
+    expect(notObject).toEqual({ credits: undefined, usage: undefined });
   });
 
   it('fails by status or error name only, never with the key', async () => {
