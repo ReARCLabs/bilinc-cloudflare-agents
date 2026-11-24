@@ -29,22 +29,6 @@ export function autoCheckpointEnabled(value: unknown): boolean {
   return !AUTO_CHECKPOINT_OFF.has(String(value ?? "").trim().toLowerCase());
 }
 
-/** Bilinc's own codes for a write that may have run. */
-const OUTCOME_UNKNOWN_CODES = new Set(["mutation_outcome_unknown", "cloud_runtime_unavailable"]);
-
-/**
- * True when the automatic checkpoint may exist, so it must not be tried again. The package reports any
- * JSON 5xx on a write as outcome unknown; for this one call a JSON 5xx with another code is taken as
- * not applied, so the next wake retries it: a second checkpoint costs 2 credits, while a stored
- * "unknown" would leave the chat without one for good. A timeout, a network failure, a 5xx without
- * JSON ("bad_response"), an in-flight conflict (409) and the two codes above stay unknown.
- */
-export function autoCheckpointMayExist(error: unknown): boolean {
-  if (!isBilincError(error) || !error.outcomeUnknown) return false;
-  const codedServerError = error.status >= 500 && error.code !== "bad_response" && !OUTCOME_UNKNOWN_CODES.has(error.code);
-  return !codedServerError;
-}
-
 export class BilincAgent extends Think<Env> {
   private _bilinc?: Bilinc;
 
@@ -100,7 +84,7 @@ export class BilincAgent extends Think<Env> {
       await this.bilinc.client.createSnapshot({ label: AUTO_CHECKPOINT_LABEL_PREFIX + new Date().toISOString() });
     } catch (error) {
       try {
-        if (autoCheckpointMayExist(error)) {
+        if (isBilincError(error) && error.outcomeUnknown) {
           await this.ctx.storage.put(AUTO_CHECKPOINT_FLAG, "unknown" satisfies AutoCheckpointFlag);
         } else {
           await this.ctx.storage.delete(AUTO_CHECKPOINT_FLAG);

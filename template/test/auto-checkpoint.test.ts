@@ -1,8 +1,8 @@
 import { env, evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { getAgentByName } from "agents";
-import { BilincError, type Bilinc } from "bilinc-cloudflare-agents";
+import type { Bilinc } from "bilinc-cloudflare-agents";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { autoCheckpointEnabled, autoCheckpointMayExist } from "../src/agent";
+import { autoCheckpointEnabled } from "../src/agent";
 import { AUTO_CHECKPOINT_FLAG } from "../src/constants";
 import { bilincError, deferredResponse, htmlPage, installMockBilinc, type MockBilinc } from "./helpers/mock-bilinc";
 import { scriptModel } from "./helpers/mock-model";
@@ -70,58 +70,6 @@ describe("automatic checkpoint at chat start", () => {
     expect(await waitFor(() => readFlag(chatId), (f) => f === "unknown")).toBe("unknown");
     await wake(chatId);
     expect(snapshotPosts()).toHaveLength(1);
-  });
-
-  it.each(["mutation_outcome_unknown", "cloud_runtime_unavailable"])(
-    "sets unknown after Bilinc's own outcome-unknown code %s and does not repeat it",
-    async (code) => {
-      bilinc.override("POST /memory/snapshots", () => bilincError(503, code));
-      const chatId = crypto.randomUUID();
-      await getAgentByName(e.BilincAgent, chatId);
-      expect(await waitFor(() => readFlag(chatId), (f) => f === "unknown")).toBe("unknown");
-      bilinc.clearOverrides();
-      await wake(chatId);
-      expect(snapshotPosts()).toHaveLength(1);
-    },
-  );
-
-  it.each([
-    [500, "internal_error"],
-    [502, "upstream_error"],
-  ])("deletes the flag after a JSON %i with another code, so the next wake tries once more", async (status, code) => {
-    bilinc.override("POST /memory/snapshots", () => bilincError(status, code));
-    const chatId = crypto.randomUUID();
-    await getAgentByName(e.BilincAgent, chatId);
-    await waitFor(() => readFlag(chatId), (f) => f === undefined && snapshotPosts().length === 1);
-    expect(await readFlag(chatId)).toBeUndefined();
-    bilinc.clearOverrides();
-    await wake(chatId);
-    expect(await waitFor(() => readFlag(chatId), (f) => f === "done")).toBe("done");
-    expect(snapshotPosts()).toHaveLength(2);
-  });
-
-  it("treats only a JSON 5xx with a code other than Bilinc's two outcome-unknown codes as not applied", () => {
-    const unknown = (code: string, status: number) => new BilincError({ code, status, outcomeUnknown: true });
-    for (const error of [
-      unknown("timeout", 0),
-      unknown("network", 0),
-      unknown("bad_response", 502),
-      unknown("bad_response", 200),
-      unknown("idempotency_conflict", 409),
-      unknown("mutation_outcome_unknown", 503),
-      unknown("cloud_runtime_unavailable", 503),
-    ]) {
-      expect(autoCheckpointMayExist(error), `${error.code} ${error.status}`).toBe(true);
-    }
-    for (const error of [
-      unknown("internal_error", 500),
-      unknown("upstream_error", 502),
-      new BilincError({ code: "payment_required", status: 402 }),
-      new BilincError({ code: "capability_unavailable", status: 503 }),
-      new TypeError("setup failed"),
-    ]) {
-      expect(autoCheckpointMayExist(error), String(error)).toBe(false);
-    }
   });
 
   it("sets unknown and sends nothing when a wake finds pending", async () => {
