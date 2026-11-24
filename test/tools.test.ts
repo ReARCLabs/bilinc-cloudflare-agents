@@ -475,6 +475,7 @@ describe("bilinc_rollback", () => {
     ["entitlement_inactive", 403],
     ["capability_not_entitled", 403],
     ["rate_limited", 429],
+    ["capability_unavailable", 503],
   ])("%s is refused before Bilinc spends the token: the preview is kept", async (code, status) => {
     const { tools, map, previewId, onMemoryChanged } = await previewThen(apiError(status, code));
     expect(await run(tools, "bilinc_rollback", { previewId })).not.toBe("run the preview first");

@@ -73,13 +73,19 @@ function neverSent(error: unknown): boolean {
 /**
  * Answers Bilinc gives before it redeems a rollback's confirmation token: the key check (401), the
  * credit reservation (402), the plan check (403) and an edge rate limit (429) all run before the
- * rollback itself. Every other answer can come after the token was spent, so the preview is dropped.
+ * rollback itself, and `capability_unavailable` (503) comes before credits are reserved or anything
+ * runs. Every other answer can come after the token was spent, so the preview is dropped.
  */
 const REFUSED_BEFORE_TOKEN_SPENT = new Set([401, 402, 403, 429]);
 
 /** True when the stored rollback preview is still usable after this failure. */
 function previewStillUsable(error: unknown): boolean {
-  return neverSent(error) || (isBilincError(error) && !error.outcomeUnknown && REFUSED_BEFORE_TOKEN_SPENT.has(error.status));
+  return (
+    neverSent(error) ||
+    (isBilincError(error) &&
+      !error.outcomeUnknown &&
+      (REFUSED_BEFORE_TOKEN_SPENT.has(error.status) || error.code === "capability_unavailable"))
+  );
 }
 
 /**
