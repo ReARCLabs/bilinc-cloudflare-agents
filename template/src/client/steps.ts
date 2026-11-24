@@ -112,6 +112,12 @@ function joinCounts(parts: [number, string][], none: string): string {
   return out.length > 0 ? out.join(", ") : none;
 }
 
+/** Bilinc's project-wide preview counts in words: "1 to change back, 2 to remove", or "nothing to change". */
+export function previewCounts(preview: RollbackPreviewResult): string {
+  const c = preview.counts;
+  return joinCounts([[c.create, "to restore"], [c.update, "to change back"], [c.remove, "to remove"]], "nothing to change");
+}
+
 function keyLines(groups: [string, readonly string[]][], max = 3): string[] {
   const lines: string[] = [];
   for (const [mark, keys] of groups) for (const key of keys) if (lines.length < max) lines.push(`${mark} ${key}`);
@@ -213,9 +219,8 @@ function finished(tool: string, output: unknown): { label: string; log: string[]
         : null;
     case "bilinc_rollback_preview": {
       if (!isRollbackPreview(output)) return null;
-      const c = output.counts;
       return {
-        label: `Previewed the rollback: ${joinCounts([[c.create, "to restore"], [c.update, "to change back"], [c.remove, "to remove"]], "nothing to change")}`,
+        label: `Previewed the rollback: ${previewCounts(output)}`,
         // Bilinc's counts cover the whole project even when the key lists are cut short (src/tools.ts bilinc_rollback_preview).
         log: output.truncated
           ? [...keyLines([["+", output.createKeys], ["~", output.updateKeys], ["-", output.removeKeys]], 2), PREVIEW_CUT_SHORT_LOG]

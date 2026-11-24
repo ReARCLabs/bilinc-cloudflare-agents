@@ -313,6 +313,26 @@ describe("ApprovalStep", () => {
     expect(onApprove).toHaveBeenCalledOnce();
   });
 
+  it("shows what the rollback will change: Bilinc's counts and this agent's keys by kind", () => {
+    render(<ApprovalStep info={rollbackInfo} preview={{ ...preview, createKeys: ["new-one"] }} onApprove={() => {}} onReject={() => {}} />);
+    expect(screen.getByText("Whole project: 1 to change back, 2 to remove.")).toBeTruthy();
+    const groups = screen.getAllByRole("group").map((g) => [g.getAttribute("aria-label"), [...g.querySelectorAll("code")].map((c) => c.textContent)]);
+    expect(groups).toEqual([
+      ["Restored", ["new-one"]],
+      ["Changed back", ["favourite-tea"]],
+      ["Removed", ["a", "b"]],
+    ]);
+    expect(document.querySelector(".appr-keys .tone-removed")).toBeTruthy();
+  });
+
+  it("says when the rollback changes nothing and lists no empty kinds", () => {
+    const none = { ...preview, counts: { create: 0, update: 0, remove: 0 }, createKeys: [], updateKeys: [], removeKeys: [], outsideNamespace: 0, truncated: false };
+    render(<ApprovalStep info={rollbackInfo} preview={none} onApprove={() => {}} onReject={() => {}} />);
+    expect(screen.getByText("Whole project: nothing to change.")).toBeTruthy();
+    expect(screen.queryAllByRole("group")).toHaveLength(0);
+    expect(screen.queryByText(/cut short/)).toBeNull();
+  });
+
   it("rejects plainly, or with the typed reason (button or Enter)", () => {
     const onReject = vi.fn();
     render(<ApprovalStep info={rollbackInfo} preview={preview} onApprove={() => {}} onReject={onReject} />);

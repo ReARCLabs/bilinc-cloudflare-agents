@@ -48,10 +48,10 @@ const SEARCH_OUT =
 const PREVIEW = {
   previewId: "pv1",
   snapshotId: "snap_3",
-  counts: { create: 0, update: 1, remove: 0 },
-  createKeys: [],
+  counts: { create: 1, update: 1, remove: 1 },
+  createKeys: ["morning-run"],
   updateKeys: ["favourite-tea"],
-  removeKeys: [],
+  removeKeys: ["old-fact"],
   outsideNamespace: 0,
   truncated: false,
   expiresAt: minutesAgo(-5),

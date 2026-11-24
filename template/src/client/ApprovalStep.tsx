@@ -1,5 +1,33 @@
 import { useState } from "react";
-import type { ApprovalInfo, RollbackPreviewResult } from "./steps";
+import { previewCounts, type ApprovalInfo, type RollbackPreviewResult } from "./steps";
+
+/** The preview's key lists, by what the rollback does to each key. */
+function PreviewKeys({ preview }: { preview: RollbackPreviewResult }) {
+  const groups: [string, string, string[]][] = [
+    ["Restored", "added", preview.createKeys],
+    ["Changed back", "changed", preview.updateKeys],
+    ["Removed", "removed", preview.removeKeys],
+  ];
+  const shown = groups.filter(([, , keys]) => keys.length > 0);
+  if (shown.length === 0) return null;
+  return (
+    <div className="appr-keys">
+      {shown.map(([title, tone, keys]) => (
+        <div key={title} role="group" aria-label={title} className="appr-group">
+          <span className={`appr-kind ${tone}`}>
+            <i className={`tone tone-${tone}`} aria-hidden="true" />
+            {title}
+          </span>
+          <span className="appr-list">
+            {keys.map((key) => (
+              <code key={key}>{key}</code>
+            ))}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export const NO_PREVIEW_TEXT = "No preview with this id was found in the chat, so this rollback can only be rejected.";
 
@@ -32,6 +60,8 @@ export function ApprovalStep(p: {
             <p className="appr-text">
               Roll back the whole Bilinc project to <b>{p.checkpointLabel ?? p.preview.snapshotId}</b>? Other chats are included.
             </p>
+            <p className="appr-note">{`Whole project: ${previewCounts(p.preview)}.`}</p>
+            <PreviewKeys preview={p.preview} />
             {(p.preview.outsideNamespace ?? 0) > 0 && (
               <p className="appr-note">{`Keys not listed (other agents' entries, or keys these tools cannot take): ${p.preview.outsideNamespace}.`}</p>
             )}

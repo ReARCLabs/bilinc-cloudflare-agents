@@ -82,6 +82,14 @@
 .appr { margin-top: 8px; border: 1px solid rgba(233, 180, 95, 0.35); border-radius: 10px; padding: 10px 12px; background: rgba(233, 180, 95, 0.05); color: var(--glass); }
 .appr-text { margin: 0; font-size: 12.5px; }
 .appr-note { margin: 6px 0 0; font-size: 11.5px; color: var(--g2); }
+.appr-keys { margin-top: 8px; display: grid; gap: 4px; }
+.appr-group { display: flex; gap: 10px; align-items: baseline; font-size: 11.5px; }
+.appr-kind { display: inline-flex; align-items: center; gap: 6px; flex: none; min-width: 96px; }
+.appr-kind.added { color: var(--added); }
+.appr-kind.changed { color: var(--changed); }
+.appr-kind.removed { color: var(--removed); }
+.appr-list { display: flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; color: var(--glass); }
+.appr-list code { font-size: 11.5px; overflow-wrap: anywhere; }
 .appr .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
 .appr input { flex: 1; min-width: 120px; background: transparent; border: 1px solid var(--line); border-radius: 999px; color: var(--glass); padding: 6px 12px; font-size: 12px; }
 .appr input::placeholder { color: var(--g3); }
