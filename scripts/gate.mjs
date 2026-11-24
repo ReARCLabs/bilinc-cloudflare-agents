@@ -103,6 +103,7 @@ export function abortDetail(error) {
 
 // writeFileSync's mode applies only when it creates the file, so an existing report would keep its old,
 // possibly world-readable mode. A fresh file made only for this write, then renamed over the path, never does.
+// A symlink at the path is replaced, never followed, so the gate cannot be steered into overwriting another file.
 export function writeReport(reportPath, body) {
   const temp = `${reportPath}.${randomAlnum(12)}.tmp`;
   try {
