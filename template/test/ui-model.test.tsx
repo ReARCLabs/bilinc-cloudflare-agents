@@ -7,11 +7,11 @@ import { useModelChoice } from "../src/client/use-model-choice";
 
 const BIG = "@cf/openai/gpt-oss-120b";
 const SMALL = "@cf/openai/gpt-oss-20b";
-const SCOUT = "@cf/meta/llama-4-scout-17b-16e-instruct";
+const NO_EFFORT = "@cf/example/no-reasoning-model";
 const RAW = [
   { id: BIG, label: "gpt-oss-120b", note: "Default. Reliable with memory tools", tag: "tested", effort: ["low", "medium", "high"] },
   { id: SMALL, label: "gpt-oss-20b", note: "Smaller and faster", tag: "tested", effort: ["low", "medium", "high"] },
-  { id: SCOUT, label: "llama-4-scout", note: "Fast; no reasoning control", tag: "tested", effort: null },
+  { id: NO_EFFORT, label: "no-reasoning-model", note: "No reasoning control", tag: "tested", effort: null },
 ];
 const CONFIG: ModelsConfig = parseModels(RAW, BIG);
 
@@ -61,10 +61,10 @@ describe("ModelSelector", () => {
     fireEvent.click(trigger());
     fireEvent.click(screen.getByRole("radio", { name: /gpt-oss-20b/ }));
     expect(onChange).toHaveBeenLastCalledWith({ model: SMALL, effort: "high" });
-    fireEvent.click(screen.getByRole("radio", { name: /llama-4-scout/ }));
-    expect(onChange).toHaveBeenLastCalledWith({ model: SCOUT, effort: null });
+    fireEvent.click(screen.getByRole("radio", { name: /no-reasoning-model/ }));
+    expect(onChange).toHaveBeenLastCalledWith({ model: NO_EFFORT, effort: null });
     expect(screen.queryByRole("slider")).toBeNull();
-    expect(trigger().getAttribute("aria-label")).toBe("Model: llama-4-scout. Change");
+    expect(trigger().getAttribute("aria-label")).toBe("Model: no-reasoning-model. Change");
   });
 
   it("moves the radio selection with the arrow keys", () => {
@@ -108,7 +108,7 @@ describe("useModelChoice", () => {
   function Probe(p: { config: ModelsConfig | null; server?: AgentUiState }) {
     const [choice, setChoice] = useModelChoice(p.config, p.server);
     return (
-      <button type="button" onClick={() => setChoice({ model: SCOUT, effort: null })}>
+      <button type="button" onClick={() => setChoice({ model: NO_EFFORT, effort: null })}>
         {choice ? `${choice.model} ${choice.effort}` : "none"}
       </button>
     );
@@ -123,6 +123,6 @@ describe("useModelChoice", () => {
     expect(screen.getByRole("button").textContent).toBe(`${SMALL} low`);
     fireEvent.click(screen.getByRole("button"));
     rerender(<Probe config={CONFIG} server={{ model: BIG, effort: "high" }} />);
-    expect(screen.getByRole("button").textContent).toBe(`${SCOUT} null`);
+    expect(screen.getByRole("button").textContent).toBe(`${NO_EFFORT} null`);
   });
 });

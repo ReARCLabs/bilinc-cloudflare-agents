@@ -388,7 +388,7 @@ describe("App", () => {
 const MODELS = parseModels(
   [
     { id: "@cf/openai/gpt-oss-120b", label: "gpt-oss-120b", note: "", tag: "tested", effort: ["low", "medium", "high"] },
-    { id: "@cf/meta/llama-4-scout-17b-16e-instruct", label: "llama-4-scout", note: "", tag: "tested", effort: null },
+    { id: "@cf/example/no-reasoning-model", label: "no-reasoning-model", note: "", tag: "tested", effort: null },
   ],
   "@cf/openai/gpt-oss-120b",
 );
@@ -489,15 +489,15 @@ describe("Chat", () => {
     renderChat();
     expect(hooks.chatOptions?.body?.()).toEqual({});
     fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
-    fireEvent.click(screen.getByRole("radio", { name: /llama-4-scout/ }));
-    expect(hooks.chatOptions?.body?.()).toEqual({ model: "@cf/meta/llama-4-scout-17b-16e-instruct", effort: null });
+    fireEvent.click(screen.getByRole("radio", { name: /no-reasoning-model/ }));
+    expect(hooks.chatOptions?.body?.()).toEqual({ model: "@cf/example/no-reasoning-model", effort: null });
   });
 
   it("starts the selector from the chat's stored choice", async () => {
     serveCheckpoints();
-    hooks.agentState = { model: "@cf/meta/llama-4-scout-17b-16e-instruct", effort: null };
+    hooks.agentState = { model: "@cf/example/no-reasoning-model", effort: null };
     renderChat();
-    expect(await screen.findByRole("button", { name: "Model: llama-4-scout. Change" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Model: no-reasoning-model. Change" })).toBeTruthy();
   });
 
   it("sends with Enter, and stops with Stop while a turn runs", () => {

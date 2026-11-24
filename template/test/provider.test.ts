@@ -68,8 +68,8 @@ describe("model provider", () => {
 
   it("sends no reasoning_effort for a choice without effort", async () => {
     const { binding, calls } = fakeAI();
-    await realModel(binding, { model: "@cf/meta/llama-4-scout-17b-16e-instruct", effort: null }).doGenerate({ prompt });
-    expect(calls[0]!.model).toBe("@cf/meta/llama-4-scout-17b-16e-instruct");
+    await realModel(binding, { model: "@cf/example/no-reasoning-model", effort: null }).doGenerate({ prompt });
+    expect(calls[0]!.model).toBe("@cf/example/no-reasoning-model");
     expect("reasoning_effort" in calls[0]!.input).toBe(false);
   });
 

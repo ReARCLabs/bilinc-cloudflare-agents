@@ -15,14 +15,14 @@ import { userMessage, waitFor } from "./helpers/turns";
 const e = env as unknown as Env;
 const BIG = "@cf/openai/gpt-oss-120b";
 const SMALL = "@cf/openai/gpt-oss-20b";
-const SCOUT = "@cf/meta/llama-4-scout-17b-16e-instruct";
+const NO_EFFORT = "@cf/example/no-reasoning-model";
 const ALL = ["low", "medium", "high"];
 
 describe("parseModels", () => {
   it("reads an array and a JSON string the same way", () => {
     const list = [
       { id: BIG, label: "gpt-oss-120b", note: "Default", tag: "tested", effort: ALL },
-      { id: SCOUT, effort: null },
+      { id: NO_EFFORT, effort: null },
     ];
     const fromArray = parseModels(list, BIG);
     expect(parseModels(JSON.stringify(list), BIG)).toEqual(fromArray);
@@ -30,7 +30,7 @@ describe("parseModels", () => {
       defaultId: BIG,
       models: [
         { id: BIG, label: "gpt-oss-120b", note: "Default", tag: "tested", effort: ["low", "medium", "high"] },
-        { id: SCOUT, label: "llama-4-scout-17b-16e-instruct", note: "", tag: "", effort: null },
+        { id: NO_EFFORT, label: "no-reasoning-model", note: "", tag: "", effort: null },
       ],
     });
   });
@@ -45,12 +45,12 @@ describe("parseModels", () => {
 
   it("always includes MODEL, first when MODELS lacks it, and survives a broken var", () => {
     expect(parseModels("not json", BIG)).toEqual({ defaultId: BIG, models: [{ id: BIG, label: "gpt-oss-120b", note: "", tag: "", effort: null }] });
-    expect(parseModels([{ id: SCOUT }], BIG).models.map((m) => m.id)).toEqual([BIG, SCOUT]);
+    expect(parseModels([{ id: NO_EFFORT }], BIG).models.map((m) => m.id)).toEqual([BIG, NO_EFFORT]);
   });
 });
 
 describe("resolveChoice", () => {
-  const config: ModelsConfig = parseModels([{ id: BIG, effort: ALL }, { id: SMALL, effort: ["low", "high"] }, { id: SCOUT, effort: null }], BIG);
+  const config: ModelsConfig = parseModels([{ id: BIG, effort: ALL }, { id: SMALL, effort: ["low", "high"] }, { id: NO_EFFORT, effort: null }], BIG);
 
   it("defaults to MODEL with medium effort, or the first level when medium is not listed", () => {
     expect(resolveChoice(undefined, config, undefined)).toEqual({ model: BIG, effort: "medium" });
@@ -68,7 +68,7 @@ describe("resolveChoice", () => {
   });
 
   it("never sends effort to a model without it", () => {
-    expect(resolveChoice({ model: SCOUT, effort: "high" }, config, undefined)).toEqual({ model: SCOUT, effort: null });
+    expect(resolveChoice({ model: NO_EFFORT, effort: "high" }, config, undefined)).toEqual({ model: NO_EFFORT, effort: null });
   });
 
   it("keeps the stored choice when the request names none, if MODELS still lists it", () => {
@@ -138,9 +138,9 @@ describe("model choice per chat", () => {
 
   it("keeps the stored choice for a request that names none", async () => {
     const chatId = crypto.randomUUID();
-    await ask(chatId, { model: SCOUT, effort: null });
+    await ask(chatId, { model: SMALL, effort: "low" });
     await ask(chatId, {}, "again");
-    expect(recordedChoices().at(-1)).toEqual({ model: SCOUT, effort: null });
+    expect(recordedChoices().at(-1)).toEqual({ model: SMALL, effort: "low" });
   });
 
   it("runs MODEL for a model outside MODELS, never the client's string", async () => {
@@ -167,7 +167,7 @@ describe("GET /api/models", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { default: string; models: { id: string }[] };
     expect(body).toEqual({ default: BIG, models: parseModels(e.MODELS, e.MODEL).models });
-    expect(body.models.map((m) => m.id)).toEqual([BIG, SMALL, SCOUT]);
+    expect(body.models.map((m) => m.id)).toEqual([BIG, SMALL]);
   });
 
   it("answers 401 without the session cookie", async () => {

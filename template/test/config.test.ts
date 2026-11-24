@@ -85,6 +85,13 @@ describe("deploy configuration", () => {
     expect(Object.keys(pkg.dependencies)).not.toContain("workers-ai-provider");
   });
 
+  it("ships only the models verified on the createAI path, in the app and the test config", () => {
+    const testWrangler = JSON.parse(read("test/wrangler.test.jsonc")) as Record<string, any>;
+    const ids = (raw: unknown) => parseModels(raw, "@cf/openai/gpt-oss-120b").models.map((m) => m.id);
+    expect(ids(wrangler.vars.MODELS)).toEqual(["@cf/openai/gpt-oss-120b", "@cf/openai/gpt-oss-20b"]);
+    expect(ids(testWrangler.vars.MODELS)).toEqual(["@cf/openai/gpt-oss-120b", "@cf/openai/gpt-oss-20b"]);
+  });
+
   it("lists MODEL first in MODELS, with every entry valid and tagged", () => {
     const raw = wrangler.vars.MODELS as unknown[];
     const config = parseModels(raw, wrangler.vars.MODEL);

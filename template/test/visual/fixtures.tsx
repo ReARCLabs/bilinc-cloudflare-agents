@@ -26,7 +26,6 @@ const MODELS = parseModels(
   [
     { id: "@cf/openai/gpt-oss-120b", label: "gpt-oss-120b", note: "Default. Reliable with memory tools", tag: "tested", effort: ["low", "medium", "high"] },
     { id: "@cf/openai/gpt-oss-20b", label: "gpt-oss-20b", note: "Smaller and faster", tag: "tested", effort: ["low", "medium", "high"] },
-    { id: "@cf/meta/llama-4-scout-17b-16e-instruct", label: "llama-4-scout", note: "Fast; no reasoning control", tag: "tested", effort: null },
   ],
   "@cf/openai/gpt-oss-120b",
 );
