@@ -1,6 +1,6 @@
 // Every screen state of the spec, from fixed data, for Playwright screenshots, axe and the keyboard pass.
 import type { UIMessage } from "ai";
-import { StrictMode, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { CheckpointsBody } from "../../src/checkpoints";
 import { ChatScreen, type ChatStatus } from "../../src/client/ChatScreen";
@@ -75,13 +75,18 @@ const diffFailed = {
 const answered = [user("u1", "What is my favourite tea?"), assistant("a1", search, { type: "text", text: "Your favourite tea is Rooibos." })];
 const rollbackAsk = user("u2", 'Roll back to "Before tea change".');
 
-type Fixture = { messages: UIMessage[]; status: ChatStatus; bilinc?: "ok" | "unreachable" };
+/** `then`: the messages a moment after mount (with the page scrolled to the bottom), as a live turn delivers them. */
+type Fixture = { messages: UIMessage[]; then?: UIMessage[]; status: ChatStatus; bilinc?: "ok" | "unreachable" };
 
 const FIXTURES: Record<string, Fixture> = {
   empty: { messages: [], status: "ready" },
   thinking: { messages: [user("u4", "And what about my morning routine?")], status: "submitted" },
   "steps-running": { messages: [rollbackAsk, assistant("a2", listed, previewRunning)], status: "streaming" },
-  "approval-waiting": { messages: [...answered, rollbackAsk, assistant("a2", listed, previewDone, rollbackWaiting)], status: "ready" },
+  "approval-waiting": {
+    messages: [...answered, rollbackAsk, assistant("a2", listed, previewDone)],
+    then: [...answered, rollbackAsk, assistant("a2", listed, previewDone, rollbackWaiting)],
+    status: "ready",
+  },
   "turn-done": { messages: answered, status: "ready" },
   "error-step": {
     messages: [user("u3", "Diff against the checkpoint snap_9."), assistant("a3", diffFailed, { type: "text", text: "I could not find that checkpoint. Shall I list the checkpoints?" })],
@@ -99,11 +104,20 @@ const TIMING: Timing = new Map([
 
 function Screen({ name }: { name: string }) {
   const [choice, setChoice] = useState<ModelChoice>({ model: MODELS.defaultId, effort: "medium" });
-  if (name === "unlock" || name === "unlock-error") return <UnlockScreen gate="locked" onUnlocked={async (): Promise<"locked"> => "locked"} />;
   const fixture = FIXTURES[name] ?? FIXTURES.empty!;
+  const [arrived, setArrived] = useState(false);
+  useEffect(() => {
+    if (!fixture.then) return;
+    const t = setTimeout(() => {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
+      setArrived(true);
+    }, 100);
+    return () => clearTimeout(t);
+  }, [fixture]);
+  if (name === "unlock" || name === "unlock-error") return <UnlockScreen gate="locked" onUnlocked={async (): Promise<"locked"> => "locked"} />;
   return (
     <ChatScreen
-      messages={fixture.messages}
+      messages={arrived && fixture.then ? fixture.then : fixture.messages}
       status={fixture.status}
       bilincState={fixture.bilinc ?? "ok"}
       checkpoints={CHECKPOINTS}

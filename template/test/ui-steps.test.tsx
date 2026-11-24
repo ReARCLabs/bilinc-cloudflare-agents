@@ -312,6 +312,36 @@ describe("StepList", () => {
     }
   });
 
+  it("scrolls only for a waiting step that appears after mount, and only when the user is near the bottom", () => {
+    const scroll = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scroll;
+    const rect = Element.prototype.getBoundingClientRect;
+    let stepTop = 0;
+    Element.prototype.getBoundingClientRect = () => ({ top: stepTop }) as DOMRect;
+    try {
+      const props = { timing: new Map() as Timing, active: true, renderApproval: () => <p>approve here</p> };
+      const forget = (id: string) => part("bilinc_forget", "approval-requested", { toolCallId: id, input: { key: "k" }, approval: { id: `a-${id}` } });
+      // A chat reopened with an approval already waiting does not jump to it.
+      const { unmount } = render(<StepList steps={buildSteps(assistant(forget("f1")))} {...props} />);
+      expect(scroll).not.toHaveBeenCalled();
+      unmount();
+      // A user who scrolled up to read (the new step starts more than 200 px below the viewport) is not pulled down.
+      stepTop = window.innerHeight + 201;
+      const running = buildSteps(assistant(part("search_context", "input-available", { toolCallId: "s1" })));
+      const { rerender } = render(<StepList steps={running} {...props} />);
+      rerender(<StepList steps={buildSteps(assistant(forget("f2")))} {...props} />);
+      expect(scroll).not.toHaveBeenCalled();
+      // Within 200 px of the bottom, the next new waiting step scrolls into view.
+      stepTop = window.innerHeight + 200;
+      rerender(<StepList steps={buildSteps(assistant(forget("f2"), forget("f3")))} {...props} />);
+      expect(scroll).toHaveBeenCalledTimes(1);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+      Element.prototype.getBoundingClientRect = rect;
+    }
+  });
+
   it("says Done · N steps when the durations are unknown (after a reload)", () => {
     render(<StepList steps={buildSteps(searchDone)} timing={new Map()} active={false} renderApproval={() => null} />);
     expect(screen.getByRole("button", { expanded: false }).textContent).toBe("Done · 1 step");

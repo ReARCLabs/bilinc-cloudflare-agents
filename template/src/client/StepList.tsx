@@ -46,6 +46,8 @@ function Wave({ text }: { text: string }) {
   );
 }
 
+const NEAR_BOTTOM_PX = 200;
+
 /** One assistant turn's tool calls as a step list; collapses to "Worked for X.Xs · N steps" when done. */
 export function StepList(p: { steps: Step[]; timing: Timing; active: boolean; renderApproval(step: Step): ReactNode }) {
   const ids = [...new Set(p.steps.map((s) => s.toolCallId))];
@@ -60,11 +62,21 @@ export function StepList(p: { steps: Step[]; timing: Timing; active: boolean; re
     if (waitingKey) setUserOpen(null);
   }
   const open = userOpen ?? working;
-  // Each new waiting step scrolls into view (above the sticky composer, via scroll-padding-bottom),
-  // jumping instead of gliding when the user asked for reduced motion.
+  // A waiting step that appears after mount scrolls into view (above the sticky composer, via
+  // scroll-padding-bottom), but only when the user is near the bottom of the page: a reopened chat
+  // and a user reading further up are left where they are. Reduced motion jumps instead of gliding.
   const firstWaiting = useRef<HTMLLIElement>(null);
+  const seenWaitingIds = useRef<Set<string> | null>(null);
+  seenWaitingIds.current ??= new Set(waitingKey.split(" ").filter(Boolean));
   useEffect(() => {
-    if (!waitingKey) return;
+    const seen = seenWaitingIds.current!;
+    const fresh = waitingKey.split(" ").filter((id) => id && !seen.has(id));
+    for (const id of fresh) seen.add(id);
+    if (fresh.length === 0) return;
+    // The new step sits where the page ended before it appeared, so its top against the viewport's
+    // bottom says how far the user was from the bottom (measuring the page now would count the step's own height).
+    const top = firstWaiting.current?.getBoundingClientRect().top;
+    if (top === undefined || top - window.innerHeight > NEAR_BOTTOM_PX) return;
     const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     firstWaiting.current?.scrollIntoView?.({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
   }, [waitingKey]);
