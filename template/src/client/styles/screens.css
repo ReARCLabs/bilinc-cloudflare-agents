@@ -1,0 +1,17 @@
+/* Empty chat. */
+.empty { text-align: center; padding: 12vh 0 24px; }
+.empty h2 { margin: 0; font-weight: 700; font-stretch: 118%; font-size: 24px; }
+.empty p { margin: 8px 0 20px; color: var(--g2); }
+.suggest { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.suggest button {
+  all: unset;
+  cursor: pointer;
+  font-size: 12.5px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  color: var(--glass);
+  background: rgba(232, 238, 242, 0.08);
+  border: 1px solid rgba(232, 238, 242, 0.16);
+}
+.suggest button:hover { background: rgba(232, 238, 242, 0.14); }
+.suggest button:focus-visible { outline: 2px solid var(--added); outline-offset: 2px; }

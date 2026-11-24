@@ -106,3 +106,40 @@
 }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 .el { font-family: var(--mono); font-size: 12px; color: var(--g3); font-variant-numeric: tabular-nums; }
+
+/* Answer and memory chip. */
+.ans { margin: 0; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chip-wrap { position: relative; display: inline-block; }
+.chip {
+  all: unset;
+  cursor: default;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--added);
+  border: 1px solid rgba(92, 225, 230, 0.35);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-left: 4px;
+  white-space: nowrap;
+}
+.chip:focus-visible { outline: 2px solid var(--added); outline-offset: 2px; }
+.chip-tip {
+  display: none;
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 5;
+  width: 240px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--card2);
+  border: 1px solid var(--line);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--g2);
+  white-space: normal;
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.7);
+}
+.chip-tip > span { display: block; }
+.chip-value { color: var(--glass); margin-top: 4px; }
+.chip-wrap:hover .chip-tip, .chip:focus-visible + .chip-tip { display: block; }
