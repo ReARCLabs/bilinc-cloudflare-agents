@@ -6,3 +6,6 @@ dist
 .wrangler
 coverage
 docs/plans/
+visual/test-results
+visual/out
+playwright-report

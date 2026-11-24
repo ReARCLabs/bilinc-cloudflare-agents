@@ -39,7 +39,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build",
+    "visual": "playwright test -c visual/playwright.config.ts"
   },
   "peerDependencies": {
     "agents": ">=0.34.0 <1",
@@ -50,9 +51,11 @@
     "access": "public"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@cloudflare/vitest-pool-workers": "0.23.0",
     "@cloudflare/workers-types": "^5.20260815.1",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^26.6.6",
     "agents": "0.34.0",
     "ai": "^7.0.179",
