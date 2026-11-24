@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { formatElapsed } from "./format";
 import { Icon, Spinner } from "./icons";
 import { activeLabel, type Step, type StepStatus } from "./steps";
@@ -60,6 +60,14 @@ export function StepList(p: { steps: Step[]; timing: Timing; active: boolean; re
     if (waitingKey) setUserOpen(null);
   }
   const open = userOpen ?? working;
+  // Each new waiting step scrolls into view (above the sticky composer, via scroll-padding-bottom),
+  // jumping instead of gliding when the user asked for reduced motion.
+  const firstWaiting = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (!waitingKey) return;
+    const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    firstWaiting.current?.scrollIntoView?.({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+  }, [waitingKey]);
   const now = useNow(working);
   const start = turnStart(ids, p.timing);
   const worked = workedFor(ids, p.timing);
@@ -87,7 +95,7 @@ export function StepList(p: { steps: Step[]; timing: Timing; active: boolean; re
             const timed = !s.id.endsWith(":approval") && (s.status === "done" || s.status === "error");
             const duration = timed ? stepDuration(p.timing, s.toolCallId) : undefined;
             return (
-              <li key={s.id} className={`st ${s.status}`}>
+              <li key={s.id} className={`st ${s.status}`} ref={s.status === "waiting" && s.id === waitingKey.split(" ")[0] ? firstWaiting : undefined}>
                 <span className="ic" aria-hidden="true">
                   <StepIcon status={s.status} />
                 </span>

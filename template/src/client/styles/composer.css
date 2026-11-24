@@ -118,3 +118,7 @@
 .is-phone .foot { gap: 6px; }
 .is-phone .mtrig { gap: 6px; padding: 0 6px; }
 .is-phone .elab { display: none; }
+
+/* The composer stays in the page flow (sticky, not fixed), so at the bottom of the page nothing sits
+   under it. Scrolling something into view, like a waiting approval, keeps clear of its measured height. */
+html { scroll-padding-bottom: calc(var(--composer-h, 0px) + 12px); }

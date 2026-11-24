@@ -5,6 +5,7 @@ import { BANNER_TEXT, rejectedByUserOutput, TOKEN_TOO_SHORT_TEXT } from "../src/
 import { parseModels } from "../src/models";
 import { App } from "../src/client/App";
 import { Chat } from "../src/client/Chat";
+import { ChatScreen, type ChatScreenProps } from "../src/client/ChatScreen";
 import { StatusBanner } from "../src/client/StatusBanner";
 import type { RollbackPreviewResult } from "../src/client/steps";
 import {
@@ -415,6 +416,60 @@ function renderChat() {
   };
   return { ...render(<Chat {...props} />), props };
 }
+
+function screenBase(): ChatScreenProps {
+  return {
+    messages: [],
+    status: "ready",
+    bilincState: "ok",
+    checkpoints: null,
+    models: null,
+    choice: null,
+    timing: new Map(),
+    onChoice: vi.fn(),
+    onSend: vi.fn(),
+    onStop: vi.fn(),
+    onApprove: vi.fn(),
+    onReject: vi.fn(),
+    onOpenHistory: vi.fn(),
+    onNewChat: vi.fn(),
+  };
+}
+
+describe("composer height", () => {
+  it("measures the composer into --composer-h on the root and keeps it current", () => {
+    let fire: (() => void) | undefined;
+    const observed: Element[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) {
+          fire = cb;
+        }
+        observe(el: Element) {
+          observed.push(el);
+        }
+        disconnect() {}
+        unobserve() {}
+      },
+    );
+    let h = 96;
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => ({ height: h }) as DOMRect);
+    try {
+      const { unmount } = render(<ChatScreen {...screenBase()} />);
+      expect(observed[0]?.classList.contains("composer-col")).toBe(true);
+      expect(document.documentElement.style.getPropertyValue("--composer-h")).toBe("96px");
+      h = 180;
+      act(() => fire?.());
+      expect(document.documentElement.style.getPropertyValue("--composer-h")).toBe("180px");
+      unmount();
+      expect(document.documentElement.style.getPropertyValue("--composer-h")).toBe("");
+    } finally {
+      spy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe("Chat", () => {
   it("connects with the chat id and wires Roll back to the approval, naming the checkpoint", async () => {

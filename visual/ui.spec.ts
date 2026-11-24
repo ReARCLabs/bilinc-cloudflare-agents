@@ -3,7 +3,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 declare global {
   interface Window {
@@ -81,6 +81,27 @@ async function seriousViolations(page: Page): Promise<string[]> {
     .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`);
 }
 
+async function box(locator: Locator) {
+  const b = await locator.boundingBox();
+  if (!b) throw new Error("element has no box");
+  return b;
+}
+
+/** The waiting approval scrolls itself into view: Roll back and Reject sit inside the viewport and above the sticky composer. */
+async function approvalClearOfComposer(page: Page): Promise<void> {
+  const gap = async () => {
+    const composer = await box(page.locator(".composer-col"));
+    const limit = Math.min(composer.y, page.viewportSize()?.height ?? Infinity);
+    let worst = Infinity;
+    for (const name of ["Roll back", "Reject"]) {
+      const b = await box(page.getByRole("button", { name, exact: true }));
+      worst = Math.min(worst, b.y, limit - (b.y + b.height));
+    }
+    return worst;
+  };
+  await expect.poll(gap).toBeGreaterThanOrEqual(0);
+}
+
 for (const size of WIDTHS) {
   test.describe(`${size.name} px`, () => {
     test.use({ viewport: { width: size.width, height: size.height } });
@@ -89,6 +110,7 @@ for (const size of WIDTHS) {
         await open(page, shot.state, shot.reducedMotion);
         if (shot.act) await shot.act(page);
         if (shot.panel) await panelSettled(page, shot.panel);
+        if (shot.state === "approval-waiting") await approvalClearOfComposer(page);
         await page.screenshot({ path: join(OUT, `${shot.name}-${size.name}.png`) });
         expect(await seriousViolations(page)).toEqual([]);
         if (shot.reducedMotion) {
@@ -98,6 +120,13 @@ for (const size of WIDTHS) {
           const before = await timer.textContent();
           await page.waitForTimeout(400);
           expect(await timer.textContent()).not.toBe(before);
+        }
+        if (shot.state === "approval-waiting") {
+          // Scrolled to the very bottom, the last thing in the conversation still ends above the composer.
+          await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }));
+          const last = await box(page.locator(".conv > li").last());
+          const composerAtEnd = await box(page.locator(".composer-col"));
+          expect(last.y + last.height).toBeLessThanOrEqual(composerAtEnd.y + 1);
         }
         if (size.name === "390" && shot.state !== "unlock" && shot.state !== "unlock-error") {
           await expect(page.locator(".app")).toHaveClass(/is-phone/);

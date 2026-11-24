@@ -275,6 +275,33 @@ describe("StepList", () => {
     expect(screen.getByText("approve here")).toBeTruthy();
   });
 
+  it("scrolls a step into view when it turns waiting, smoothly unless reduced motion is on", () => {
+    const scroll = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      for (const reduce of [false, true]) {
+        scroll.mockClear();
+        vi.stubGlobal("matchMedia", vi.fn((q: string) => ({ matches: reduce && q.includes("reduce"), addEventListener() {}, removeEventListener() {} })));
+        const running = buildSteps(assistant(part("search_context", "input-available", { toolCallId: "s1" })));
+        const props = { timing: new Map() as Timing, active: true, renderApproval: () => <p>approve here</p> };
+        const { rerender, unmount } = render(<StepList steps={running} {...props} />);
+        expect(scroll).not.toHaveBeenCalled();
+        const waiting = buildSteps(assistant(part("bilinc_forget", "approval-requested", { toolCallId: "f1", input: { key: "k" }, approval: { id: "a1" } })));
+        rerender(<StepList steps={waiting} {...props} />);
+        expect(scroll).toHaveBeenCalledTimes(1);
+        expect(scroll).toHaveBeenCalledWith({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+        expect((scroll.mock.contexts[0] as Element).classList.contains("waiting")).toBe(true);
+        rerender(<StepList steps={waiting} {...props} />);
+        expect(scroll).toHaveBeenCalledTimes(1);
+        unmount();
+      }
+    } finally {
+      Element.prototype.scrollIntoView = original;
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("says Done · N steps when the durations are unknown (after a reload)", () => {
     render(<StepList steps={buildSteps(searchDone)} timing={new Map()} active={false} renderApproval={() => null} />);
     expect(screen.getByRole("button", { expanded: false }).textContent).toBe("Done · 1 step");

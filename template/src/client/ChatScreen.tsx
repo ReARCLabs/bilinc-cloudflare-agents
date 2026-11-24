@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 import type { BilincHealthState } from "bilinc-cloudflare-agents";
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { CheckpointsBody } from "../checkpoints";
 import type { ModelChoice, ModelsConfig } from "../models";
 import { ApprovalStep } from "./ApprovalStep";
@@ -40,6 +40,24 @@ export function ChatScreen(p: ChatScreenProps) {
   const [draft, setDraft] = useState("");
   const [focusTick, setFocusTick] = useState(0);
   const busy = p.status === "submitted" || p.status === "streaming";
+  const composerCol = useRef<HTMLDivElement>(null);
+
+  // The composer is sticky at the bottom and its textarea grows, so its real height lives in
+  // --composer-h: the page's scroll-padding uses it, so scrolling a waiting approval into view
+  // stops above the composer instead of under it.
+  useLayoutEffect(() => {
+    const el = composerCol.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const measure = () => root.style.setProperty("--composer-h", `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    measure();
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    observer?.observe(el);
+    return () => {
+      observer?.disconnect();
+      root.style.removeProperty("--composer-h");
+    };
+  }, []);
 
   // History, the suggestions and the Memory menu all fill the composer and focus it; none of them sends.
   const fill = useCallback((text: string) => {
@@ -73,7 +91,7 @@ export function ChatScreen(p: ChatScreenProps) {
           <Conversation messages={p.messages} busy={busy} timing={p.timing} renderApproval={renderApproval} />
         )}
       </main>
-      <div className="col composer-col">
+      <div className="col composer-col" ref={composerCol}>
         <Composer
           draft={draft}
           onDraft={setDraft}
