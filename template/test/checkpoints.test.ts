@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { CheckpointsBody } from "../src/checkpoints";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CHECKPOINTS_CACHE_MS, resetCheckpointsCache, type CheckpointsBody } from "../src/checkpoints";
 import { handleRequest } from "../src/server";
 import { htmlPage, installMockBilinc, TEST_API_KEY, type MockBilinc } from "./helpers/mock-bilinc";
 import { sessionCookie } from "./helpers/session";
@@ -25,9 +25,13 @@ async function seed(method: string, path: string, body: unknown): Promise<void> 
 describe("GET /api/checkpoints", () => {
   let bilinc: MockBilinc;
   beforeEach(() => {
+    resetCheckpointsCache();
     bilinc = installMockBilinc();
   });
-  afterEach(() => bilinc.restore());
+  afterEach(() => {
+    bilinc.restore();
+    vi.restoreAllMocks();
+  });
 
   it("answers 401 without the session cookie and calls nothing", async () => {
     expect(await checkpoints({}, false)).toEqual({ status: 401, body: { error: "unauthorized" } });
@@ -80,5 +84,24 @@ describe("GET /api/checkpoints", () => {
     expect(b.state).toBe("ok");
     expect(b.now).toBeNull();
     expect(b.checkpoints.map((c) => c.id)).toEqual(["snap_1"]);
+  });
+
+  it("answers two quick calls, even at the same time, with one upstream pair, and reads again after 5 s", async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const pair = ["GET /memory/snapshots", "POST /memory/list"];
+    const [a, b] = await Promise.all([checkpoints(), checkpoints()]);
+    expect(b).toEqual(a);
+    expect((await checkpoints()).body).toEqual(a.body);
+    expect(bilinc.calls.map((c) => `${c.method} ${c.path}`)).toEqual(pair);
+    now += CHECKPOINTS_CACHE_MS;
+    await checkpoints();
+    expect(bilinc.calls.map((c) => `${c.method} ${c.path}`)).toEqual([...pair, ...pair]);
+  });
+
+  it("keeps one cached answer per key and namespace", async () => {
+    await checkpoints();
+    expect((await checkpoints({ BILINC_API_KEY: "bil_live_revoked" })).body).toEqual({ state: "key_invalid", checkpoints: [], now: null });
+    expect(((await checkpoints()).body as CheckpointsBody).state).toBe("ok");
   });
 });
