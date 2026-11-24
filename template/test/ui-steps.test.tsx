@@ -258,6 +258,23 @@ describe("StepList", () => {
     expect(screen.getByText("1.4s")).toBeTruthy();
   });
 
+  it("opens again when a step starts waiting after the user collapsed the list", () => {
+    const running = buildSteps(assistant(part("search_context", "input-available", { toolCallId: "s1" })));
+    const props = { timing: new Map() as Timing, active: true, renderApproval: () => <p>approve here</p> };
+    const { rerender } = render(<StepList steps={running} {...props} />);
+    fireEvent.click(screen.getByRole("button", { expanded: true }));
+    expect(screen.getByRole("button", { expanded: false })).toBeTruthy();
+    const waiting = buildSteps(
+      assistant(
+        part("search_context", "output-available", { toolCallId: "s1", output: SEARCH_OUT }),
+        part("bilinc_forget", "approval-requested", { toolCallId: "f1", input: { key: "k" }, approval: { id: "a1" } }),
+      ),
+    );
+    rerender(<StepList steps={waiting} {...props} />);
+    expect(screen.getByRole("button", { expanded: true })).toBeTruthy();
+    expect(screen.getByText("approve here")).toBeTruthy();
+  });
+
   it("says Done · N steps when the durations are unknown (after a reload)", () => {
     render(<StepList steps={buildSteps(searchDone)} timing={new Map()} active={false} renderApproval={() => null} />);
     expect(screen.getByRole("button", { expanded: false }).textContent).toBe("Done · 1 step");

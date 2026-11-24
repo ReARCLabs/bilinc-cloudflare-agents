@@ -52,6 +52,13 @@ export function StepList(p: { steps: Step[]; timing: Timing; active: boolean; re
   const live = activeLabel(p.steps);
   const working = p.active || live !== null;
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  // A new approval must never sit inside a list the user collapsed: each new waiting step resets the choice.
+  const waitingKey = p.steps.filter((s) => s.status === "waiting").map((s) => s.id).join(" ");
+  const [seenWaiting, setSeenWaiting] = useState(waitingKey);
+  if (waitingKey !== seenWaiting) {
+    setSeenWaiting(waitingKey);
+    if (waitingKey) setUserOpen(null);
+  }
   const open = userOpen ?? working;
   const now = useNow(working);
   const start = turnStart(ids, p.timing);
