@@ -110,6 +110,14 @@ describe("deploy configuration", () => {
     expect(readme).not.toContain("so a reload keeps it");
   });
 
+  it("documents the real MODEL fallback in the README", () => {
+    const readme = read("README.md");
+    expect(readme).not.toContain("It must also be in `MODELS`.");
+    expect(readme).toContain("When `MODEL` is missing from `MODELS`, it is added first, with no reasoning control.");
+    const config = parseModels([{ id: "@cf/openai/gpt-oss-20b", effort: ["low", "medium", "high"] }], "@cf/openai/gpt-oss-120b");
+    expect(config.models[0]).toEqual({ id: "@cf/openai/gpt-oss-120b", label: "gpt-oss-120b", note: "", tag: "", effort: null });
+  });
+
   it("documents every model of MODELS, the notices and the disclaimer in the README", () => {
     const readme = read("README.md");
     for (const model of parseModels(wrangler.vars.MODELS, wrangler.vars.MODEL).models) expect(readme).toContain(`\`${model.id}\``);

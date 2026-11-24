@@ -40,7 +40,7 @@ Set in `wrangler.jsonc` under `vars`:
 
 | Var | Default | Notes |
 |---|---|---|
-| `MODEL` | `@cf/openai/gpt-oss-120b` | The default model. It must also be in `MODELS`. |
+| `MODEL` | `@cf/openai/gpt-oss-120b` | The default model, and the one that runs for any choice outside `MODELS`. List it in `MODELS` to give it a label and reasoning levels. When `MODEL` is missing from `MODELS`, it is added first, with no reasoning control. |
 | `MODELS` | `gpt-oss-120b`, `gpt-oss-20b` | The models the selector offers: a JSON array of `{ "id", "label", "note", "tag", "effort" }`. `id` must be a Workers AI id (`@cf/<author>/<model>`); other entries are ignored. `label`, `note` and `tag` are optional; `tag` is a short badge next to the model, and a model without one shows none. `effort` lists the reasoning levels a model takes (`["low", "medium", "high"]` for the gpt-oss models) or is `null`. Shipped models: `@cf/openai/gpt-oss-120b` and `@cf/openai/gpt-oss-20b`. `@cf/zai-org/glm-4.7-flash` is not listed: it was too slow to answer a chat turn at the 0.1.0 gate. With `--var` or `.dev.vars`, pass the same array as a JSON string. |
 | `BILINC_NAMESPACE` | `default` | 1–64 letters, digits, `_` or `-`. Changing it starts from an empty memory: entries under the old namespace stay in Bilinc but the agent no longer sees them. An invalid value stops the chat. |
 | `AUTO_CHECKPOINT` | `true` | `"false"`, `"0"`, `"off"` or `"no"` (in any case, spaces at either end ignored) turns the automatic checkpoint off; any other value leaves it on. Then an overwrite made before a manual checkpoint cannot be rolled back. |
