@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -492,49 +492,6 @@ describe('writeReport', () => {
       expect(statSync(existing).mode & 0o777).toBe(0o600);
       expect(readFileSync(existing, 'utf8')).toBe(`${JSON.stringify({ ok: false }, null, 2)}\n`);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-});
-
-describe('writeReport through a symlink and in a read-only directory', () => {
-  const unix = process.platform !== 'win32';
-  const root = unix && process.getuid?.() === 0;
-
-  it.runIf(unix)('writes through a symlink: the link stays a link and its target gets the report, owner-only', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gate-report-'));
-    try {
-      const targetDir = join(dir, 'reports');
-      mkdirSync(targetDir);
-      const target = join(targetDir, 'report.json');
-      writeFileSync(target, 'old', { mode: 0o644 });
-      const link = join(dir, 'link.json');
-      symlinkSync(target, link);
-      writeReport(link, { ok: true });
-      expect(lstatSync(link).isSymbolicLink()).toBe(true);
-      expect(readFileSync(target, 'utf8')).toBe(`${JSON.stringify({ ok: true }, null, 2)}\n`);
-      expect(statSync(target).mode & 0o777).toBe(0o600);
-      expect(readdirSync(dir).sort()).toEqual(['link.json', 'reports']);
-      expect(readdirSync(targetDir)).toEqual(['report.json']);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it.runIf(unix && !root)('writes in place and makes the file owner-only when the directory does not allow a temp file', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gate-report-'));
-    const locked = join(dir, 'locked');
-    try {
-      mkdirSync(locked);
-      const report = join(locked, 'report.json');
-      writeFileSync(report, 'old content that is longer than the report', { mode: 0o644 });
-      chmodSync(locked, 0o500);
-      writeReport(report, { ok: false });
-      expect(readFileSync(report, 'utf8')).toBe(`${JSON.stringify({ ok: false }, null, 2)}\n`);
-      expect(statSync(report).mode & 0o777).toBe(0o600);
-      expect(readdirSync(locked)).toEqual(['report.json']);
-    } finally {
-      chmodSync(locked, 0o700);
       rmSync(dir, { recursive: true, force: true });
     }
   });

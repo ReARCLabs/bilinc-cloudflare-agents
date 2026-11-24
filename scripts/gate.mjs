@@ -6,7 +6,7 @@
 // or a checkpoint that an earlier gate run did not make. A run that ends early forgets the keys it wrote (best effort).
 // Usage: BILINC_GATE_API_KEY=... node scripts/gate.mjs <report.json> [--wait-expiry] [--allow-nonempty]
 import { randomBytes } from 'node:crypto';
-import { chmodSync, existsSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 export const GATE_NAMESPACE = 'gate';
@@ -103,23 +103,12 @@ export function abortDetail(error) {
 
 // writeFileSync's mode applies only when it creates the file, so an existing report would keep its old,
 // possibly world-readable mode. A fresh file made only for this write, then renamed over the path, never does.
-// An existing path is resolved first, so a symlink is written through, not replaced by a regular file.
-// When its directory does not allow a temp file, the file itself is made owner-only and written in place.
 export function writeReport(reportPath, body) {
-  const text = `${JSON.stringify(body, null, 2)}\n`;
-  const target = existsSync(reportPath) ? realpathSync(reportPath) : reportPath;
-  const temp = `${target}.${randomAlnum(12)}.tmp`;
+  const temp = `${reportPath}.${randomAlnum(12)}.tmp`;
   try {
-    writeFileSync(temp, text, { mode: 0o600, flag: 'wx' });
-  } catch {
-    if (existsSync(target)) chmodSync(target, 0o600);
-    writeFileSync(target, text, { mode: 0o600 });
-    chmodSync(target, 0o600);
-    return;
-  }
-  try {
+    writeFileSync(temp, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
     chmodSync(temp, 0o600);
-    renameSync(temp, target);
+    renameSync(temp, reportPath);
   } catch (error) {
     rmSync(temp, { force: true });
     throw error;
