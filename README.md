@@ -12,10 +12,7 @@ Not affiliated with or endorsed by Cloudflare.
 
 ## Deploy the template
 
-<!-- deploy-button
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ReARCLabs/bilinc-cloudflare-agents/tree/main/template)
--->
-The one-click Deploy to Cloudflare button is in the [GitHub README](https://github.com/ReARCLabs/bilinc-cloudflare-agents#deploy-the-template).
 
 [`template/`](template) is a complete Think chat app: a chat UI, a "New chat" button, a passphrase screen, a health banner and approval cards for forget and rollback. The default model is `@cf/openai/gpt-oss-120b` (the `MODEL` var in `template/wrangler.jsonc`), served by Workers AI. Deploying asks for two secrets:
 

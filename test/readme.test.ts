@@ -58,12 +58,10 @@ describe('README', () => {
     expect(visible).toContain(`https://bilinc.space/signup?next=/api-keys&${UTM}`);
   });
 
-  it('keeps the Deploy button in a comment until the repository is public', () => {
-    expect(readme).toContain(`[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](${BUTTON_URL})`);
-    expect(visible).not.toContain('deploy.workers.cloudflare.com');
-    expect(visible).toContain(
-      'The one-click Deploy to Cloudflare button is in the [GitHub README](https://github.com/ReARCLabs/bilinc-cloudflare-agents#deploy-the-template).',
-    );
+  it('shows the live Deploy button for the template folder', () => {
+    expect(visible).toContain(`[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](${BUTTON_URL})`);
+    expect(readme).not.toContain('<!-- deploy-button');
+    expect(visible).not.toContain('The one-click Deploy to Cloudflare button is in the [GitHub README]');
   });
 
   it('names both key sources and the dedicated account', () => {
