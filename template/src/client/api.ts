@@ -1,4 +1,5 @@
 import type { BilincHealthState } from "bilinc-cloudflare-agents";
+import { parseModels, type ModelsConfig } from "../models";
 
 export type GateState = "unlocked" | "locked" | "token_too_short" | "too_many_attempts";
 
@@ -57,4 +58,17 @@ export async function unlock(passphrase: string): Promise<UnlockResult> {
   if (res.status === 429) return { ok: false, gate: "too_many_attempts", retryAfterSeconds: retryAfterSeconds(res) };
   if (res.status === 401) return { ok: false, gate: "locked" };
   return { ok: false, gate: "locked", serverError: true };
+}
+
+/** The model allowlist, or null when it cannot be read: the selector then stays hidden and the Worker runs MODEL. */
+export async function fetchModels(): Promise<ModelsConfig | null> {
+  try {
+    const res = await fetch("/api/models", { credentials: "same-origin" });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { default?: unknown; models?: unknown };
+    if (typeof body.default !== "string" || !Array.isArray(body.models)) return null;
+    return parseModels(body.models, body.default);
+  } catch {
+    return null;
+  }
 }

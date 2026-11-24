@@ -17,6 +17,11 @@
   },
   "vars": {
     "MODEL": "@cf/openai/gpt-oss-120b",
+    "MODELS": [
+      { "id": "@cf/openai/gpt-oss-120b", "label": "gpt-oss-120b", "note": "Default. Reliable with memory tools", "tag": "to test", "effort": ["low", "medium", "high"] },
+      { "id": "@cf/openai/gpt-oss-20b", "label": "gpt-oss-20b", "note": "Smaller and faster", "tag": "to test", "effort": ["low", "medium", "high"] },
+      { "id": "@cf/meta/llama-4-scout-17b-16e-instruct", "label": "llama-4-scout", "note": "Fast; no reasoning control", "tag": "to test", "effort": null }
+    ],
     "BILINC_NAMESPACE": "default",
     "AUTO_CHECKPOINT": "true"
   },

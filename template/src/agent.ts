@@ -1,6 +1,7 @@
 import { Think, type ThinkModel, type TurnConfig, type TurnContext } from "@cloudflare/think";
 import type { ContextConfig } from "agents/context";
 import { createAI, type AI } from "agents/models/ai-sdk";
+import type { Connection } from "agents";
 import type { LanguageModel, ToolSet } from "ai";
 import { createBilinc, isBilincError, type Bilinc } from "bilinc-cloudflare-agents";
 import { bilincTools } from "bilinc-cloudflare-agents/tools";
@@ -12,7 +13,7 @@ import {
   WORKSPACE_CAPABILITY_LINE,
   type AutoCheckpointFlag,
 } from "./constants";
-import type { ModelChoice } from "./models";
+import { INITIAL_UI_STATE, parseModels, resolveChoice, type AgentUiState, type ModelChoice, type ModelsConfig } from "./models";
 
 export function stripWorkspaceLine(system: string): string {
   return system
@@ -31,7 +32,8 @@ export function autoCheckpointEnabled(value: unknown): boolean {
   return !AUTO_CHECKPOINT_OFF.has(String(value ?? "").trim().toLowerCase());
 }
 
-export class BilincAgent extends Think<Env> {
+export class BilincAgent extends Think<Env, AgentUiState> {
+  override initialState: AgentUiState = INITIAL_UI_STATE;
   private _bilinc?: Bilinc;
 
   // One instance per Durable Object: the memory block and the tools share its breaker and rate cap.
@@ -59,8 +61,19 @@ export class BilincAgent extends Think<Env> {
     });
   }
 
+  /** MODELS, validated; MODEL is always in it. Read on every turn, so new vars apply after a redeploy. */
+  modelsConfig(): ModelsConfig {
+    return parseModels(this.env.MODELS, this.env.MODEL);
+  }
+
+  /** The chat's stored choice, checked against MODELS again (it may have changed since it was stored). */
   override getModel(): ThinkModel {
-    return this.languageModel({ model: this.env.MODEL, effort: null });
+    return this.languageModel(resolveChoice(undefined, this.modelsConfig(), this.state));
+  }
+
+  /** The page cannot write agent state: only the server stores the validated model choice. */
+  override validateStateChange(_next: AgentUiState, source: Connection | "server"): void {
+    if (source !== "server") throw new Error("read-only state: the model choice is set by the server");
   }
 
   override getSystemPrompt(): string {
@@ -80,6 +93,11 @@ export class BilincAgent extends Think<Env> {
   }
 
   override beforeTurn(ctx: TurnContext): TurnConfig {
+    // Validate the request's model and effort against MODELS and store them for this chat.
+    // Think calls getModel() after this returns, so this turn and its continuations (after an
+    // approval, which reuse the last body) run on the stored, validated choice.
+    const choice = resolveChoice(ctx.body, this.modelsConfig(), this.state);
+    if (this.state?.model !== choice.model || this.state?.effort !== choice.effort) this.setState(choice);
     return { activeTools: [...ACTIVE_TOOLS], instructions: stripWorkspaceLine(ctx.system) };
   }
 

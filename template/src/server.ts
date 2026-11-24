@@ -2,6 +2,7 @@ import { routeAgentRequest } from "agents";
 import { checkStatus } from "bilinc-cloudflare-agents";
 import { AGENT_PATH } from "./constants";
 import { accessToken, handleUnlock, isTokenLongEnough, jsonResponse, verifySessionCookie } from "./gate";
+import { parseModels } from "./models";
 
 export { BilincAgent } from "./agent";
 export { UnlockLimiter } from "./limiter";
@@ -32,6 +33,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     if (pathname === "/api/health" && request.method === "GET") {
       const { state } = await checkStatus({ apiKey: env.BILINC_API_KEY, namespace: env.BILINC_NAMESPACE });
       return jsonResponse(200, { state });
+    }
+    if (pathname === "/api/models" && request.method === "GET") {
+      const { defaultId, models } = parseModels(env.MODELS, env.MODEL);
+      return jsonResponse(200, { default: defaultId, models });
     }
     return notFound();
   }

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SIGNUP_URL } from "../src/constants";
+import { parseModels } from "../src/models";
 
 // Tests run from the template directory (npm test).
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
@@ -27,7 +28,7 @@ describe("deploy configuration", () => {
       },
       migrations: [{ tag: "v1", new_sqlite_classes: ["BilincAgent", "UnlockLimiter"] }],
       assets: { not_found_handling: "single-page-application", run_worker_first: ["/api/*", "/agents/*"] },
-      vars: { MODEL: "@cf/openai/gpt-oss-120b", BILINC_NAMESPACE: "default", AUTO_CHECKPOINT: "true" },
+      vars: { MODEL: "@cf/openai/gpt-oss-120b", MODELS: wrangler.vars.MODELS, BILINC_NAMESPACE: "default", AUTO_CHECKPOINT: "true" },
       secrets: { required: ["BILINC_API_KEY", "APP_ACCESS_TOKEN"] },
     });
   });
@@ -82,5 +83,14 @@ describe("deploy configuration", () => {
     expect(agent).toContain('import { createAI, type AI } from "agents/models/ai-sdk";');
     expect(agent).not.toMatch(/from ["']workers-ai-provider/);
     expect(Object.keys(pkg.dependencies)).not.toContain("workers-ai-provider");
+  });
+
+  it("lists MODEL first in MODELS, with every entry valid and tagged", () => {
+    const raw = wrangler.vars.MODELS as unknown[];
+    const config = parseModels(raw, wrangler.vars.MODEL);
+    expect(Array.isArray(raw)).toBe(true);
+    expect(config.models).toHaveLength(raw.length);
+    expect(config.models[0]!.id).toBe(wrangler.vars.MODEL);
+    for (const model of config.models) expect(["tested", "to test"]).toContain(model.tag);
   });
 });

@@ -5,6 +5,7 @@ interface Env {
   BILINC_API_KEY: string;
   APP_ACCESS_TOKEN: string;
   MODEL: string;
+  MODELS?: unknown;
   BILINC_NAMESPACE?: string;
   AUTO_CHECKPOINT?: string;
 }

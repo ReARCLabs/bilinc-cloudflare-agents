@@ -78,6 +78,6 @@ describe("model provider", () => {
     await runInDurableObject(stub, (agent) => {
       agent.getModel();
     });
-    expect(recordedChoices().at(-1)).toEqual({ model: "@cf/openai/gpt-oss-120b", effort: null });
+    expect(recordedChoices().at(-1)).toEqual({ model: "@cf/openai/gpt-oss-120b", effort: "medium" });
   });
 });
