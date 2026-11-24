@@ -14,7 +14,7 @@ import { userMessage, waitFor } from "./helpers/turns";
 
 const e = env as unknown as Env;
 const BIG = "@cf/openai/gpt-oss-120b";
-const SMALL = "@cf/openai/gpt-oss-20b";
+const SMALL = "@cf/example/second-test-model";
 const NO_EFFORT = "@cf/example/no-reasoning-model";
 const ALL = ["low", "medium", "high"];
 

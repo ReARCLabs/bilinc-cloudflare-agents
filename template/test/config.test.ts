@@ -88,8 +88,8 @@ describe("deploy configuration", () => {
   it("ships only the models verified on the createAI path, in the app and the test config", () => {
     const testWrangler = JSON.parse(read("test/wrangler.test.jsonc")) as Record<string, any>;
     const ids = (raw: unknown) => parseModels(raw, "@cf/openai/gpt-oss-120b").models.map((m) => m.id);
-    expect(ids(wrangler.vars.MODELS)).toEqual(["@cf/openai/gpt-oss-120b", "@cf/openai/gpt-oss-20b"]);
-    expect(ids(testWrangler.vars.MODELS)).toEqual(["@cf/openai/gpt-oss-120b", "@cf/openai/gpt-oss-20b"]);
+    expect(ids(wrangler.vars.MODELS)).toEqual(["@cf/openai/gpt-oss-120b"]);
+    expect(ids(testWrangler.vars.MODELS)).toEqual(["@cf/openai/gpt-oss-120b", "@cf/example/second-test-model"]);
   });
 
   it("lists MODEL first in MODELS, with every entry valid and no visible tag", () => {
@@ -114,7 +114,7 @@ describe("deploy configuration", () => {
     const readme = read("README.md");
     expect(readme).not.toContain("It must also be in `MODELS`.");
     expect(readme).toContain("When `MODEL` is missing from `MODELS`, it is added first, with no reasoning control.");
-    const config = parseModels([{ id: "@cf/openai/gpt-oss-20b", effort: ["low", "medium", "high"] }], "@cf/openai/gpt-oss-120b");
+    const config = parseModels([{ id: "@cf/example/second-test-model", effort: ["low", "medium", "high"] }], "@cf/openai/gpt-oss-120b");
     expect(config.models[0]).toEqual({ id: "@cf/openai/gpt-oss-120b", label: "gpt-oss-120b", note: "", tag: "", effort: null });
   });
 

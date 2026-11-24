@@ -200,15 +200,15 @@ test.describe("keyboard only", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByRole("radio", { name: /gpt-oss-120b/ })).toBeFocused();
     await page.keyboard.press("ArrowDown");
-    await expect(page.getByRole("radio", { name: /gpt-oss-20b/ })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("radio", { name: /second-test-model/ })).toHaveAttribute("aria-checked", "true");
     await page.keyboard.press("Tab");
     await expect(page.getByRole("slider", { name: "Reasoning" })).toBeFocused();
     await page.keyboard.press("ArrowRight");
     await expect(page.getByRole("slider", { name: "Reasoning" })).toHaveAttribute("aria-valuetext", "High");
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: "Model" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Model: gpt-oss-20b, High reasoning. Change" })).toBeFocused();
-    expect(await calls(page)).toContainEqual(["choice", "@cf/openai/gpt-oss-20b", "high"]);
+    await expect(page.getByRole("button", { name: "Model: second-test-model, High reasoning. Change" })).toBeFocused();
+    expect(await calls(page)).toContainEqual(["choice", "@cf/example/second-test-model", "high"]);
   });
 
   test("the approval step works from the keyboard", async ({ page }) => {

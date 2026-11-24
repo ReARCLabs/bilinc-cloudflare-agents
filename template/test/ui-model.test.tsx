@@ -6,11 +6,11 @@ import { EFFORT_TEXT, ModelSelector } from "../src/client/ModelSelector";
 import { useModelChoice } from "../src/client/use-model-choice";
 
 const BIG = "@cf/openai/gpt-oss-120b";
-const SMALL = "@cf/openai/gpt-oss-20b";
+const SMALL = "@cf/example/second-test-model";
 const NO_EFFORT = "@cf/example/no-reasoning-model";
 const RAW = [
   { id: BIG, label: "gpt-oss-120b", note: "Default. Reliable with memory tools", tag: "tested", effort: ["low", "medium", "high"] },
-  { id: SMALL, label: "gpt-oss-20b", note: "Smaller and faster", tag: "tested", effort: ["low", "medium", "high"] },
+  { id: SMALL, label: "second-test-model", note: "Test-only second model", tag: "tested", effort: ["low", "medium", "high"] },
   { id: NO_EFFORT, label: "no-reasoning-model", note: "No reasoning control", tag: "tested", effort: null },
 ];
 const CONFIG: ModelsConfig = parseModels(RAW, BIG);
@@ -51,7 +51,7 @@ describe("ModelSelector", () => {
     const radios = screen.getAllByRole("radio");
     expect(radios.map((r) => r.getAttribute("aria-checked"))).toEqual(["true", "false", "false"]);
     expect(radios[0]!.textContent).toContain("tested");
-    expect(radios[1]!.textContent).toContain("Smaller and faster");
+    expect(radios[1]!.textContent).toContain("Test-only second model");
     expect(document.activeElement).toBe(radios[0]);
   });
 
@@ -67,7 +67,7 @@ describe("ModelSelector", () => {
     const onChange = vi.fn();
     render(<Harness initial={{ model: BIG, effort: "high" }} onChange={onChange} />);
     fireEvent.click(trigger());
-    fireEvent.click(screen.getByRole("radio", { name: /gpt-oss-20b/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /second-test-model/ }));
     expect(onChange).toHaveBeenLastCalledWith({ model: SMALL, effort: "high" });
     fireEvent.click(screen.getByRole("radio", { name: /no-reasoning-model/ }));
     expect(onChange).toHaveBeenLastCalledWith({ model: NO_EFFORT, effort: null });
