@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
@@ -144,5 +144,10 @@ describe('README', () => {
     const model = /"MODEL":\s*"([^"]+)"/.exec(wrangler)?.[1];
     expect(model).toBeDefined();
     expect(readme).toContain(`The default model is \`${String(model)}\``);
+  });
+
+  it('shows the demo capture from the gate run', () => {
+    expect(readme).toContain('![The Bilinc agent asking the user to approve a rollback, with the preview counts](docs/media/demo.png)');
+    expect(existsSync(new URL('../docs/media/demo.png', import.meta.url))).toBe(true);
   });
 });

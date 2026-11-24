@@ -8,6 +8,8 @@ Versioned memory for Cloudflare Agents: history, checkpoints, diff and rollback.
 
 Not affiliated with or endorsed by Cloudflare.
 
+![The Bilinc agent asking the user to approve a rollback, with the preview counts](docs/media/demo.png)
+
 ## Deploy the template
 
 <!-- deploy-button
