@@ -3,7 +3,7 @@
 .lockup-symbol { height: 44px; width: auto; flex: none; }
 .lockup-title { margin: 0; font-weight: 700; font-stretch: 118%; font-size: 18px; line-height: 1.1; }
 .lockup-line { font-size: 14px; color: var(--g2); display: flex; align-items: center; gap: 5px; margin-top: 3px; }
-.lockup-line img { height: 22px; width: auto; opacity: 0.95; margin: 0 2px; }
+.lockup-line img { height: 30px; width: auto; opacity: 0.95; margin: 0 2px; }
 .top-actions { display: flex; gap: 10px; }
 
 /* 40 px glass buttons: translucent fill, light top edge, blur(14px). */
