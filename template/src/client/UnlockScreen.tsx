@@ -39,10 +39,12 @@ export function UnlockScreen(p: { gate: GateState; retryAfterSeconds?: number; o
       if (result.ok) {
         setWrong(false);
         const check = await p.onUnlocked().catch((): HealthCheck => "failed");
-        // "unlocked" replaces this screen with the chat. Otherwise the passphrase stays for the retry.
-        if (check === "locked") setAfterUnlock("no_session");
-        else if (check === "failed") setAfterUnlock("check_failed");
-        else if (check !== "unlocked") setGate(check);
+        // "unlocked" replaces this screen with the chat. Otherwise the passphrase stays for the retry,
+        // and the gate is what this check found, so an earlier 429's wait text does not stay.
+        if (check === "locked" || check === "failed") {
+          setGate("locked");
+          setAfterUnlock(check === "locked" ? "no_session" : "check_failed");
+        } else if (check !== "unlocked") setGate(check);
         return;
       }
       setGate(result.gate);
