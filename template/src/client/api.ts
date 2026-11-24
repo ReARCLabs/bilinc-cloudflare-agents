@@ -1,4 +1,5 @@
 import type { BilincHealthState } from "bilinc-cloudflare-agents";
+import type { CheckpointsBody } from "../checkpoints";
 import { parseModels, type ModelsConfig } from "../models";
 
 export type GateState = "unlocked" | "locked" | "token_too_short" | "too_many_attempts";
@@ -71,4 +72,19 @@ export async function fetchModels(): Promise<ModelsConfig | null> {
   } catch {
     return null;
   }
+}
+
+/** The History list. "locked" when the session has ended; any other failed answer throws, like fetchHealth. */
+export async function fetchCheckpoints(): Promise<CheckpointsBody | "locked"> {
+  const res = await fetch("/api/checkpoints", { credentials: "same-origin" });
+  if (res.status === 401) return "locked";
+  if (!res.ok) throw new Error(`/api/checkpoints answered ${res.status}`);
+  const body = (await res.json().catch(() => null)) as Partial<CheckpointsBody> | null;
+  const state = body?.state;
+  const now = body?.now;
+  return {
+    state: isHealthState(state) ? state : "unreachable",
+    checkpoints: Array.isArray(body?.checkpoints) ? body.checkpoints : [],
+    now: now && typeof now.total === "number" ? { total: now.total } : null,
+  };
 }

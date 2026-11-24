@@ -1,0 +1,81 @@
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 18px 22px; position: relative; z-index: 5; }
+.lockup { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.lockup-symbol { height: 44px; width: auto; flex: none; }
+.lockup-title { margin: 0; font-weight: 700; font-stretch: 118%; font-size: 18px; line-height: 1.1; }
+.lockup-line { font-size: 14px; color: var(--g2); display: flex; align-items: center; gap: 5px; margin-top: 3px; }
+.lockup-line img { height: 22px; width: auto; opacity: 0.95; margin: 0 2px; }
+.top-actions { display: flex; gap: 10px; }
+
+/* 40 px glass buttons: translucent fill, light top edge, blur(14px). */
+.glass-btn {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--glass);
+  background: linear-gradient(180deg, rgba(232, 238, 242, 0.12), rgba(232, 238, 242, 0.04));
+  border: 1px solid rgba(232, 238, 242, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 8px 24px -10px rgba(0, 0, 0, 0.7);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+}
+.glass-btn:hover { background: linear-gradient(180deg, rgba(232, 238, 242, 0.18), rgba(232, 238, 242, 0.06)); }
+.glass-btn:focus-visible { outline: 2px solid var(--added); outline-offset: 2px; }
+.glass-btn svg { width: 16px; height: 16px; }
+
+.history { position: relative; }
+.popover {
+  position: absolute;
+  z-index: 6;
+  background: var(--card2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 6px;
+  font-size: 12px;
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.7);
+}
+.history-panel { right: 0; top: calc(100% + 8px); width: 260px; }
+.hist-row {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.hist-row:hover, .hist-row:focus-visible { background: rgba(232, 238, 242, 0.06); }
+.hist-row:focus-visible { outline: 2px solid var(--added); outline-offset: -2px; }
+.hist-row.now { cursor: default; }
+.hist-row.now:hover { background: none; }
+.hist-time { color: var(--g3); }
+.hist-count { color: var(--added); }
+.popover-note, .popover-foot { margin: 0; padding: 6px 8px; color: var(--g3); font-size: 11px; }
+
+/* Phone (.is-phone on the app root, set by usePhone): icon-only buttons, short lockup, bottom sheets. */
+.is-phone .top { padding: 14px 16px; }
+.is-phone .lockup-symbol { height: 32px; }
+.is-phone .lockup-line { display: none; }
+.is-phone .glass-btn { padding: 0; width: 40px; justify-content: center; }
+.is-phone .btn-text { display: none; }
+.is-phone .popover {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  width: auto;
+  max-height: 70vh;
+  overflow: auto;
+  border-radius: 16px 16px 0 0;
+  padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+}

@@ -1,5 +1,6 @@
 import { routeAgentRequest } from "agents";
 import { checkStatus } from "bilinc-cloudflare-agents";
+import { readCheckpoints } from "./checkpoints";
 import { AGENT_PATH } from "./constants";
 import { accessToken, handleUnlock, isTokenLongEnough, jsonResponse, verifySessionCookie } from "./gate";
 import { parseModels } from "./models";
@@ -37,6 +38,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     if (pathname === "/api/models" && request.method === "GET") {
       const { defaultId, models } = parseModels(env.MODELS, env.MODEL);
       return jsonResponse(200, { default: defaultId, models });
+    }
+    if (pathname === "/api/checkpoints" && request.method === "GET") {
+      return jsonResponse(200, await readCheckpoints(env));
     }
     return notFound();
   }
