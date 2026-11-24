@@ -68,6 +68,9 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const quoted = (s: string) => `"${s}"`;
 const MAX_LOG_CHARS = 120;
 
+export const DIFF_CUT_SHORT_LOG = "the lists are cut short, so the counts are too";
+export const PREVIEW_CUT_SHORT_LOG = "the lists are cut short; the counts are complete";
+
 /** search_context's answer when nothing matched (the agents SDK context tools: `?? "No results found."`). */
 export const NO_RESULTS_TEXT = "No results found.";
 /**
@@ -190,9 +193,18 @@ function finished(tool: string, output: unknown): { label: string; log: string[]
     case "bilinc_diff": {
       if (!isDiff(output)) return null;
       const { added, modified, removed } = output.counts;
+      const groups: [string, readonly string[]][] = [["+", output.added], ["~", output.modified], ["-", output.removed]];
+      // Cut-short lists: the counts only count the listed keys, so they are a lower bound.
+      if (output.truncated || output.countsComplete === false) {
+        const counts = joinCounts([[added, "added"], [modified, "modified"], [removed, "removed"]], "");
+        return {
+          label: `Compared with the checkpoint: ${counts ? `at least ${counts}` : "no changes among the listed keys"}`,
+          log: [...keyLines(groups, 2), DIFF_CUT_SHORT_LOG],
+        };
+      }
       return {
         label: `Compared with the checkpoint: ${joinCounts([[added, "added"], [modified, "modified"], [removed, "removed"]], "no changes")}`,
-        log: keyLines([["+", output.added], ["~", output.modified], ["-", output.removed]]),
+        log: keyLines(groups),
       };
     }
     case "bilinc_history":
@@ -204,7 +216,10 @@ function finished(tool: string, output: unknown): { label: string; log: string[]
       const c = output.counts;
       return {
         label: `Previewed the rollback: ${joinCounts([[c.create, "to restore"], [c.update, "to change back"], [c.remove, "to remove"]], "nothing to change")}`,
-        log: keyLines([["+", output.createKeys], ["~", output.updateKeys], ["-", output.removeKeys]]),
+        // Bilinc's counts cover the whole project even when the key lists are cut short (src/tools.ts bilinc_rollback_preview).
+        log: output.truncated
+          ? [...keyLines([["+", output.createKeys], ["~", output.updateKeys], ["-", output.removeKeys]], 2), PREVIEW_CUT_SHORT_LOG]
+          : keyLines([["+", output.createKeys], ["~", output.updateKeys], ["-", output.removeKeys]]),
       };
     }
     case "bilinc_rollback": {

@@ -83,7 +83,7 @@ describe("partSteps", () => {
     ).toEqual([["done", 'Read the history of "favourite-tea": 2 versions']]);
     const previewed = partSteps(part("bilinc_rollback_preview", "output-available", { output: preview }));
     expect(labels(previewed)).toEqual([["done", "Previewed the rollback: 1 to change back, 2 to remove"]]);
-    expect(previewed[0]!.log).toEqual(["~ favourite-tea", "- a", "- b"]);
+    expect(previewed[0]!.log).toEqual(["~ favourite-tea", "- a", "the lists are cut short; the counts are complete"]);
   });
 
   it("shows a notice string or a tool error as a failed step", () => {
@@ -175,6 +175,23 @@ describe("partSteps", () => {
     const rejected = partSteps(part("bilinc_forget", "output-available", { input: { key: "k" }, output: rejectedByUserOutput(reason) }));
     expect(labels(rejected)).toEqual([["rejected", 'You rejected forgetting "k"']]);
     expect(rejected[0]!.log).toEqual([`"${reason}"`]);
+  });
+
+  it("says 'at least' for a diff whose lists were cut short, with a log line saying why", () => {
+    const cut = { snapshotId: "snap_1", counts: { added: 2, modified: 1, removed: 0 }, added: ["x", "y"], modified: ["z"], removed: [], truncated: true, countsComplete: false };
+    const diff = partSteps(part("bilinc_diff", "output-available", { output: cut }));
+    expect(labels(diff)).toEqual([["done", "Compared with the checkpoint: at least 2 added, 1 modified"]]);
+    expect(diff[0]!.log).toEqual(["+ x", "+ y", "the lists are cut short, so the counts are too"]);
+    const onlyFlag = partSteps(part("bilinc_diff", "output-available", { output: { ...cut, truncated: false } }));
+    expect(onlyFlag[0]!.label).toBe("Compared with the checkpoint: at least 2 added, 1 modified");
+    const empty = partSteps(part("bilinc_diff", "output-available", { output: { ...cut, counts: { added: 0, modified: 0, removed: 0 }, added: [], modified: [] } }));
+    expect(labels(empty)).toEqual([["done", "Compared with the checkpoint: no changes among the listed keys"]]);
+  });
+
+  it("notes a cut-short preview list without doubting Bilinc's project-wide counts", () => {
+    const previewed = partSteps(part("bilinc_rollback_preview", "output-available", { output: preview }));
+    expect(previewed[0]!.label).toBe("Previewed the rollback: 1 to change back, 2 to remove");
+    expect(previewed[0]!.log).toEqual(["~ favourite-tea", "- a", "the lists are cut short; the counts are complete"]);
   });
 
   it("falls back to the tool name for an unknown tool", () => {
