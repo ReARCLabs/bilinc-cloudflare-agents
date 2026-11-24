@@ -24,7 +24,13 @@ export const AUTO_CHECKPOINT_LABEL_PREFIX = "auto: chat start ";
  */
 /** Start of every rejection output; the step list reads it to show a rejected approval. */
 export const REJECTED_BY_USER_PREFIX = "not done: rejected by the user";
-export const rejectedByUserOutput = (reason: string) => `${REJECTED_BY_USER_PREFIX}, who said: ${reason}`;
+const REJECTED_REASON_SEPARATOR = ", who said: ";
+export const rejectedByUserOutput = (reason: string) => `${REJECTED_BY_USER_PREFIX}${REJECTED_REASON_SEPARATOR}${reason}`;
+/** The reason inside a rejectedByUserOutput string: everything after the first separator, so a reason may contain it too. */
+export function rejectedByUserReason(output: string): string {
+  const at = output.indexOf(REJECTED_REASON_SEPARATOR);
+  return at === -1 ? "" : output.slice(at + REJECTED_REASON_SEPARATOR.length);
+}
 
 export const AGENT_BINDING = "BilincAgent";
 export const AGENT_PATH_SEGMENT = "bilinc-agent";

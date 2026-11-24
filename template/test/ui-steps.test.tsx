@@ -170,6 +170,13 @@ describe("partSteps", () => {
     expect(labels(partSteps(part("set_context", "output-available", { output: `Error: ${NOTICES.outcomeUnknown}` })))).toEqual([["error", "Could not save to memory"]]);
   });
 
+  it("keeps the whole reject reason, even when it contains the separator", () => {
+    const reason = "my boss who said: keep red, who said: no";
+    const rejected = partSteps(part("bilinc_forget", "output-available", { input: { key: "k" }, output: rejectedByUserOutput(reason) }));
+    expect(labels(rejected)).toEqual([["rejected", 'You rejected forgetting "k"']]);
+    expect(rejected[0]!.log).toEqual([`"${reason}"`]);
+  });
+
   it("falls back to the tool name for an unknown tool", () => {
     expect(labels(partSteps(part("weather", "input-available")))).toEqual([["running", "weather"]]);
     expect(labels(partSteps(part("weather", "output-available", { output: { ok: 1 } })))).toEqual([["done", "weather"]]);

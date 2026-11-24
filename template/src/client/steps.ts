@@ -1,5 +1,5 @@
 import type { ToolUIPart, UIMessage } from "ai";
-import { REJECTED_BY_USER_PREFIX } from "../constants";
+import { REJECTED_BY_USER_PREFIX, rejectedByUserReason } from "../constants";
 import { checkpointTitle } from "./format";
 import { parseHits, type MemoryHit } from "./memory-hits";
 
@@ -262,7 +262,7 @@ export function partSteps(part: ToolUIPart): Step[] {
         const out: unknown = part.output;
         // A Reject with a reason is recorded as an ordinary output (0.1.0 rule); show it as rejected.
         if (typeof out === "string" && out.startsWith(REJECTED_BY_USER_PREFIX)) {
-          const reason = out.split("who said: ")[1];
+          const reason = rejectedByUserReason(out);
           return [gate("rejected", text.rejected(input), reason ? [quoted(reason.slice(0, MAX_LOG_CHARS))] : [])];
         }
         return [...approvedRow(), result(out)];
