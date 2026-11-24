@@ -243,6 +243,8 @@ export function partSteps(part: ToolUIPart): Step[] {
       log,
       ...(approval ? { approval } : {}),
     });
+    // The "You approved" row only after a real approval: an error or notice can also end a call nobody approved.
+    const approvedRow = (): Step[] => ("approval" in part && part.approval?.approved === true ? [gate("done", text.approved(input))] : []);
     switch (part.state) {
       case "input-streaming":
         return [step("pending", text.action)];
@@ -255,7 +257,7 @@ export function partSteps(part: ToolUIPart): Step[] {
       case "output-denied":
         return [gate("rejected", text.rejected(input), part.approval.reason ? [quoted(part.approval.reason.slice(0, MAX_LOG_CHARS))] : [])];
       case "output-error":
-        return [gate("done", text.approved(input)), failed(part.errorText)];
+        return [...approvedRow(), failed(part.errorText)];
       case "output-available": {
         const out: unknown = part.output;
         // A Reject with a reason is recorded as an ordinary output (0.1.0 rule); show it as rejected.
@@ -263,7 +265,7 @@ export function partSteps(part: ToolUIPart): Step[] {
           const reason = out.split("who said: ")[1];
           return [gate("rejected", text.rejected(input), reason ? [quoted(reason.slice(0, MAX_LOG_CHARS))] : [])];
         }
-        return [gate("done", text.approved(input)), result(out)];
+        return [...approvedRow(), result(out)];
       }
     }
   }

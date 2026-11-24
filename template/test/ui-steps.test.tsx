@@ -106,12 +106,28 @@ describe("partSteps", () => {
     const done = partSteps(
       part("bilinc_rollback", "output-available", {
         input: { previewId: "p-1" },
+        approval: { id: "appr-1", approved: true },
         output: { rolledBack: true, snapshotId: "snap_1", counts: { created: 0, updated: 1, deleted: 0 } },
       }),
     );
     expect(labels(done)).toEqual([
       ["done", "You approved the rollback"],
       ["done", "Rolled back: 1 changed back"],
+    ]);
+  });
+
+  it("shows the approved row only when the user approved", () => {
+    expect(labels(partSteps(part("bilinc_forget", "output-error", { input: { key: "old-fact" }, errorText: "boom" })))).toEqual([["error", "Could not forget"]]);
+    expect(labels(partSteps(part("bilinc_rollback", "output-error", { input: { previewId: "p-1" }, approval: { id: "a", approved: true }, errorText: "boom" })))).toEqual([
+      ["done", "You approved the rollback"],
+      ["error", "Could not roll back"],
+    ]);
+    expect(labels(partSteps(part("bilinc_rollback", "output-available", { input: { previewId: "p-1" }, output: "run the preview first" })))).toEqual([
+      ["error", "Could not roll back"],
+    ]);
+    expect(labels(partSteps(part("bilinc_forget", "output-available", { input: { key: "k" }, approval: { id: "a", approved: true }, output: { forgotten: true, key: "k" } })))).toEqual([
+      ["done", 'You approved forgetting "k"'],
+      ["done", 'Forgot "k"'],
     ]);
   });
 
