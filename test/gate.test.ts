@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BilincClient, DiffResult, RollbackPreview } from '../src/index';
-import { installShapeRecorder, runGate, secretSamples, writeReport } from '../scripts/gate.mjs';
+import { installShapeRecorder, readStatusUsage, runGate, secretSamples, writeReport } from '../scripts/gate.mjs';
 
 class FakeBilincError extends Error {
   readonly code: string;
@@ -26,7 +26,17 @@ interface FakeOptions {
   tokenTtlMs?: number;
   startEntries?: number;
   runtimeVersion?: string | null;
+  /** An unmetered plan: status reports no credit balance, only `usage[].creditsEach`. */
+  unmetered?: boolean;
+  usage?: unknown;
 }
+
+const LIVE_USAGE = [
+  { eventType: 'memory_write', used: 120, limit: null, limitedBy: null, creditsEach: 1 },
+  { eventType: 'recall', used: 340, limit: null, limitedBy: null, creditsEach: 1 },
+  { eventType: 'snapshot', used: 12, limit: null, limitedBy: null, creditsEach: 2 },
+  { eventType: 'rollback', used: 4, limit: null, limitedBy: null, creditsEach: 2 },
+];
 
 /** An in-memory Bilinc that follows the spec's credit table and rollback-token rules. Nothing here touches the network. */
 function fakeBilinc(options: FakeOptions = {}) {
@@ -57,7 +67,9 @@ function fakeBilinc(options: FakeOptions = {}) {
   const client: BilincClient = {
     async status() {
       return {
-        credits: { availableTotalCredits: credits, monthlyRemainingCredits: credits },
+        credits: options.unmetered
+          ? { availableTotalCredits: null, monthlyRemainingCredits: null }
+          : { availableTotalCredits: credits, monthlyRemainingCredits: credits },
         capabilities: { commit: true, recall: true, forget: true, snapshots: true, diff: true, rollback: true, history: true, list: true },
         recallProfiles: ['fast', 'balanced'],
         runtimeVersion: options.runtimeVersion === undefined ? '2.7.3' : options.runtimeVersion,
@@ -155,7 +167,9 @@ function fakeBilinc(options: FakeOptions = {}) {
     sleeps.push(ms);
     clock += ms;
   };
-  return { bilinc: { client, prefix: 'cf.gate.' }, sleep, sleeps };
+  // Stands in for the gate's raw GET of /api/cloud/status: the package client's status() does not expose usage.
+  const readUsage = async () => options.usage ?? LIVE_USAGE;
+  return { bilinc: { client, prefix: 'cf.gate.' }, sleep, sleeps, readUsage };
 }
 
 const quiet = () => undefined;
@@ -427,6 +441,73 @@ describe('runGate against a fake Bilinc', () => {
     });
   });
 
+  it('runs on an unmetered plan: checks unit costs from status instead of balance deltas', async () => {
+    const fake = fakeBilinc({ unmetered: true });
+    const lines: string[] = [];
+    const report = await runGate({
+      bilinc: fake.bilinc,
+      runId: 'ru1',
+      sleep: fake.sleep,
+      log: (line) => lines.push(line),
+      waitForExpiry: true,
+      readUsage: fake.readUsage,
+    });
+    expect(failedIds(report)).toEqual([]);
+    expect(report.ok).toBe(true);
+    expect(report.results.find((result) => result.id === 'credits.unmetered')).toEqual({
+      id: 'credits.unmetered',
+      item: 'G10',
+      ok: true,
+      detail: 'plan has no credit balance (unmetered); per-call costs were not measured by balance delta',
+    });
+    expect(report.results.find((result) => result.id === 'credits.unit-costs')).toMatchObject({
+      id: 'credits.unit-costs',
+      item: 'G10',
+      ok: true,
+    });
+    expect(report.results.find((result) => result.id === 'credits.unit-costs')?.detail).toContain(
+      'memory_write=1 recall=1 snapshot=2 rollback=2',
+    );
+    // No per-call balance checks and no total: only the two unmetered checks carry the credits. prefix.
+    expect(report.results.map((result) => result.id).filter((id) => id.startsWith('credits.'))).toEqual([
+      'credits.unmetered',
+      'credits.unit-costs',
+    ]);
+    // The run still does all its work, and waits only for the token expiry, never for a balance to settle.
+    expect(report.results.map((result) => result.id)).toEqual(
+      expect.arrayContaining(['rollback.execute', 'rollback.restored', 'token.expires-300s', 'forget.removed']),
+    );
+    expect(fake.sleeps).toEqual([301_000]);
+    expect(lines.filter((line) => /^(PASS|FAIL) /.test(line))).toHaveLength(report.results.length);
+    expect((await fake.bilinc.client.list({})).total).toBe(0);
+  });
+
+  it.each([
+    ['a different creditsEach', LIVE_USAGE.map((row) => (row.eventType === 'snapshot' ? { ...row, creditsEach: 3 } : row)), 'snapshot=3'],
+    ['a missing event type', LIVE_USAGE.filter((row) => row.eventType !== 'rollback'), 'rollback=missing'],
+    ['a usage that is not an array', { recall: 1 }, 'memory_write=missing'],
+  ])('fails credits.unit-costs on %s', async (_name, usage, observed) => {
+    const fake = fakeBilinc({ unmetered: true, usage });
+    const report = await runGate({ bilinc: fake.bilinc, runId: 'ru2', sleep: fake.sleep, log: quiet, readUsage: fake.readUsage });
+    expect(failedIds(report)).toEqual(['credits.unit-costs']);
+    expect(report.results.find((result) => result.id === 'credits.unit-costs')?.detail).toContain(observed);
+  });
+
+  it('fails credits.unit-costs, without the key, when the status read fails on an unmetered plan', async () => {
+    const fake = fakeBilinc({ unmetered: true });
+    const lines: string[] = [];
+    const report = await runGate({
+      bilinc: fake.bilinc,
+      runId: 'ru3',
+      sleep: fake.sleep,
+      log: (line) => lines.push(line),
+      readUsage: () => Promise.reject(new TypeError('fetch failed for Bearer bil_live_abc123XYZ')),
+    });
+    expect(failedIds(report)).toEqual(['credits.unit-costs']);
+    expect(JSON.stringify(report)).not.toContain('bil_live_abc123XYZ');
+    expect(lines.join('\n')).not.toContain('bil_live_abc123XYZ');
+  });
+
   it('logs one PASS or FAIL line per check', async () => {
     const fake = fakeBilinc();
     const lines: string[] = [];
@@ -473,6 +554,35 @@ describe('installShapeRecorder', () => {
     ]);
     expect(JSON.stringify(recorder.shapes)).not.toContain('stored text 123');
     expect(globalThis.fetch).toBe(stub);
+  });
+});
+
+describe('readStatusUsage', () => {
+  const key = 'bil_live_abc123XYZ';
+
+  it('sends one GET of /api/cloud/status with the Bearer key and returns usage', async () => {
+    const stub = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(async () =>
+      Response.json({ credits: { availableTotalCredits: null }, usage: LIVE_USAGE }),
+    );
+    const usage = await readStatusUsage({ baseUrl: 'https://bilinc.example', apiKey: key, fetch: stub });
+    expect(usage).toEqual(LIVE_USAGE);
+    expect(stub).toHaveBeenCalledTimes(1);
+    const [url, init] = stub.mock.calls[0] ?? [];
+    expect(url).toBe('https://bilinc.example/api/cloud/status');
+    expect(init?.method).toBe('GET');
+    expect(new Headers(init?.headers).get('Authorization')).toBe(`Bearer ${key}`);
+  });
+
+  it('fails by status or error name only, never with the key', async () => {
+    const refused = readStatusUsage({ baseUrl: 'https://bilinc.example', apiKey: key, fetch: async () => new Response('no', { status: 401 }) });
+    await expect(refused).rejects.toThrow('GET /api/cloud/status answered 401');
+    const broken = readStatusUsage({
+      baseUrl: 'https://bilinc.example',
+      apiKey: key,
+      fetch: async () => Promise.reject(new TypeError(`fetch failed with ${key}`)),
+    });
+    await expect(broken).rejects.toThrow('GET /api/cloud/status failed: TypeError');
+    await broken.catch((error: unknown) => expect(String(error)).not.toContain(key));
   });
 });
 

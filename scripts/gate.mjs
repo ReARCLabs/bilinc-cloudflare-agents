@@ -1,9 +1,16 @@
-/* global console, process, setTimeout */
+/* global AbortSignal, console, fetch, process, setTimeout */
 // Pre-publish gate for bilinc-cloudflare-agents (spec: "Unverified > Checked at the pre-publish gate": G5, G6, G7, G10).
 // G5 includes the deployed sidecar version: the status.runtime-version check prints it and stores it in the report.
 // Runs every BilincClient call against production Bilinc with a key from a DEDICATED test account.
 // It spends about 11 credits on that account and runs a project-wide rollback, so it refuses a project that already holds entries,
 // or a checkpoint that an earlier gate run did not make. A run that ends early forgets the keys it wrote (best effort).
+// Metered and unmetered plans are both supported. The status read at the start of the run decides which:
+// - metered (a numeric credits.availableTotalCredits, e.g. the Free plan): each call's cost is measured by the balance delta
+//   (credits.<call> checks) and the run's total by credits.total;
+// - unmetered (no credit balance): calls are not measured by balance delta, and no credits.<call> or credits.total check is made.
+//   credits.unmetered records the mode, and credits.unit-costs compares status usage[].creditsEach with the documented unit costs.
+//   Usage counters are per organization, so the gate never diffs them. The package client's status() does not expose usage,
+//   so the gate reads it with one raw GET of /api/cloud/status with the same key; the key is never logged or stored.
 // Usage: BILINC_GATE_API_KEY=... node scripts/gate.mjs <report.json> [--wait-expiry] [--allow-nonempty]
 import { randomBytes } from 'node:crypto';
 import { chmodSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,6 +21,10 @@ export const TOKEN_TTL_MS = 300_000;
 export const EXPIRY_WAIT_MS = 301_000;
 export const CREDIT_SETTLE_ATTEMPTS = 4;
 export const CREDIT_SETTLE_DELAY_MS = 1_500;
+export const GATE_BASE_URL = 'https://bilinc.space';
+// Credits per event as the package documents them; credits.unit-costs checks them against status usage[].creditsEach.
+export const DOCUMENTED_UNIT_COSTS = Object.freeze({ memory_write: 1, recall: 1, snapshot: 2, rollback: 2 });
+const STATUS_READ_TIMEOUT_MS = 15_000;
 
 const ALNUM = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 const SNAPSHOT_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
@@ -116,10 +127,58 @@ export function writeReport(reportPath, body) {
   }
 }
 
-export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defaultLog, waitForExpiry = false, allowNonEmpty = false }) {
+// One raw GET of <baseUrl>/api/cloud/status with the gate's key, for usage[], which the package client's status() drops.
+// A failure names only the HTTP status or the error's name: never the message, URL or headers, so never the key.
+export async function readStatusUsage({ baseUrl, apiKey, fetch: fetchImpl = (...args) => fetch(...args) }) {
+  // No `cause` on the thrown error on purpose: the original error's message could hold the key.
+  const errorName = (error) => (error instanceof Error ? error.name : 'Error');
+  let response;
+  let failure;
+  try {
+    response = await fetchImpl(`${baseUrl}/api/cloud/status`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(STATUS_READ_TIMEOUT_MS),
+    });
+  } catch (error) {
+    failure = errorName(error);
+  }
+  if (failure !== undefined) throw new Error(`GET /api/cloud/status failed: ${failure}`);
+  if (response.status < 200 || response.status >= 300) throw new Error(`GET /api/cloud/status answered ${response.status}`);
+  let body;
+  try {
+    body = await response.json();
+  } catch (error) {
+    failure = errorName(error);
+  }
+  if (failure !== undefined) throw new Error(`GET /api/cloud/status failed: ${failure}`);
+  return body !== null && typeof body === 'object' ? body.usage : undefined;
+}
+
+// creditsEach per documented event type, or 'missing'. Only a number counts.
+function unitCosts(usage) {
+  const rows = Array.isArray(usage) ? usage.filter((row) => row !== null && typeof row === 'object') : [];
+  return Object.keys(DOCUMENTED_UNIT_COSTS).map((eventType) => {
+    const each = rows.find((row) => row.eventType === eventType)?.creditsEach;
+    return { eventType, observed: typeof each === 'number' ? each : 'missing' };
+  });
+}
+
+export async function runGate({
+  bilinc,
+  runId,
+  sleep = defaultSleep,
+  log = defaultLog,
+  waitForExpiry = false,
+  allowNonEmpty = false,
+  readUsage,
+}) {
   const { client, prefix } = bilinc;
   const results = [];
   let expectedTotal = 0;
+  // Set by the status read at the start of the run: an unmetered plan has no balance to measure calls against.
+  let unmetered = false;
 
   const check = (id, item, ok, detail) => {
     results.push({ id, item, ok, detail });
@@ -170,6 +229,13 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
     return value;
   };
   const measured = async (id, cost, call) => {
+    if (unmetered) {
+      try {
+        return { value: await call(), error: undefined };
+      } catch (caught) {
+        return { value: undefined, error: caught };
+      }
+    }
     expectedTotal += cost;
     const before = await credits();
     let value;
@@ -193,8 +259,32 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
     check('project.empty', 'gate', project.total === 0 || allowNonEmpty, `${project.total} entries in the project`);
     if (project.total > 0 && !allowNonEmpty) return finish();
 
-    const startCredits = await credits();
     const status = await client.status();
+    unmetered = typeof status.credits?.availableTotalCredits !== 'number';
+    const startCredits = unmetered ? undefined : await credits();
+    if (unmetered) {
+      check('credits.unmetered', 'G10', true, 'plan has no credit balance (unmetered); per-call costs were not measured by balance delta');
+      // The client's status() would carry usage only if a later version maps it; otherwise one raw GET reads it.
+      let usage;
+      let readFailed = false;
+      try {
+        usage = Array.isArray(status.usage) ? status.usage : typeof readUsage === 'function' ? await readUsage() : undefined;
+      } catch (error) {
+        readFailed = true;
+        check('credits.unit-costs', 'G10', false, `could not read status usage: ${abortDetail(error)}`);
+      }
+      if (!readFailed) {
+        const costs = unitCosts(usage);
+        const list = (pairs) => pairs.map(([eventType, each]) => `${eventType}=${each}`).join(' ');
+        check(
+          'credits.unit-costs',
+          'G10',
+          costs.every(({ eventType, observed }) => observed === DOCUMENTED_UNIT_COSTS[eventType]),
+          `status usage creditsEach ${list(costs.map(({ eventType, observed }) => [eventType, observed]))}; ` +
+            `documented ${list(Object.entries(DOCUMENTED_UNIT_COSTS))}`,
+        );
+      }
+    }
     check(
       'status.capabilities',
       'G5',
@@ -410,8 +500,10 @@ export async function runGate({ bilinc, runId, sleep = defaultSleep, log = defau
     check('forget.removed', 'G10', forgotOk, describeError(forgotten.error));
     if (forgotOk) leftover.delete(fact);
 
-    const endCredits = await credits();
-    check('credits.total', 'G10', startCredits - endCredits === expectedTotal, `spent ${startCredits - endCredits}, expected ${expectedTotal}`);
+    if (!unmetered) {
+      const endCredits = await credits();
+      check('credits.total', 'G10', startCredits - endCredits === expectedTotal, `spent ${startCredits - endCredits}, expected ${expectedTotal}`);
+    }
     return finish();
   } catch (error) {
     // Keep every check made so far: the report is still written, and it fails.
@@ -429,14 +521,27 @@ async function main(argv) {
   }
   const reportPath = argv.find((arg) => !arg.startsWith('--'));
   if (reportPath === undefined) {
-    console.error('usage: node scripts/gate.mjs <report.json> [--wait-expiry] [--allow-nonempty]');
+    console.error(
+      'usage: node scripts/gate.mjs <report.json> [--wait-expiry] [--allow-nonempty]\n' +
+        'Runs on metered and unmetered plans. On an unmetered plan (no credit balance) it checks the unit costs in\n' +
+        'GET /api/cloud/status usage[].creditsEach instead of measuring each call by balance delta.',
+    );
     process.exitCode = 2;
     return;
   }
   const recorder = installShapeRecorder();
   const { createBilinc } = await import('../dist/index.js');
   const runId = Date.now().toString(36);
-  const bilinc = createBilinc({ apiKey, namespace: GATE_NAMESPACE, agentId: 'gate', sessionId: `gate-${runId}`, onError: () => undefined });
+  const bilinc = createBilinc({
+    apiKey,
+    baseUrl: GATE_BASE_URL,
+    namespace: GATE_NAMESPACE,
+    agentId: 'gate',
+    sessionId: `gate-${runId}`,
+    onError: () => undefined,
+  });
+  // Read only on an unmetered plan. Goes through globalThis.fetch at call time, so the shape recorder sees it (key names only).
+  const readUsage = () => readStatusUsage({ baseUrl: GATE_BASE_URL, apiKey: apiKey.trim() });
   let report;
   try {
     report = await runGate({
@@ -444,6 +549,7 @@ async function main(argv) {
       runId,
       waitForExpiry: argv.includes('--wait-expiry'),
       allowNonEmpty: argv.includes('--allow-nonempty'),
+      readUsage,
     });
   } finally {
     recorder.restore();
