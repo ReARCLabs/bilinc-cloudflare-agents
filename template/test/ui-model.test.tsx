@@ -55,6 +55,14 @@ describe("ModelSelector", () => {
     expect(document.activeElement).toBe(radios[0]);
   });
 
+  it("shows no tag badge for a model without a tag", () => {
+    const untagged = parseModels(RAW.map(({ tag: _tag, ...rest }) => rest), BIG);
+    render(<ModelSelector models={untagged.models} choice={{ model: BIG, effort: "medium" }} onChange={() => {}} />);
+    fireEvent.click(trigger());
+    expect(screen.getByRole("dialog", { name: "Model" }).querySelector(".tag")).toBeNull();
+    expect(screen.getAllByRole("radio")[0]!.textContent).not.toContain("tested");
+  });
+
   it("keeps the effort when the new model lists it, and hides the track for a model without effort", () => {
     const onChange = vi.fn();
     render(<Harness initial={{ model: BIG, effort: "high" }} onChange={onChange} />);

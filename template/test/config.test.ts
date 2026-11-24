@@ -92,13 +92,15 @@ describe("deploy configuration", () => {
     expect(ids(testWrangler.vars.MODELS)).toEqual(["@cf/openai/gpt-oss-120b", "@cf/openai/gpt-oss-20b"]);
   });
 
-  it("lists MODEL first in MODELS, with every entry valid and tagged", () => {
+  it("lists MODEL first in MODELS, with every entry valid and no visible tag", () => {
+    const testWrangler = JSON.parse(read("test/wrangler.test.jsonc")) as Record<string, any>;
     const raw = wrangler.vars.MODELS as unknown[];
     const config = parseModels(raw, wrangler.vars.MODEL);
     expect(Array.isArray(raw)).toBe(true);
     expect(config.models).toHaveLength(raw.length);
     expect(config.models[0]!.id).toBe(wrangler.vars.MODEL);
-    for (const model of config.models) expect(["tested", "to test"]).toContain(model.tag);
+    // Tags are optional; the release gate decides whether a model gets one.
+    for (const entry of [...raw, ...(testWrangler.vars.MODELS as unknown[])]) expect(entry).not.toHaveProperty("tag");
   });
 
   it("documents every model of MODELS, the notices and the disclaimer in the README", () => {

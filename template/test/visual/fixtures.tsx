@@ -24,8 +24,8 @@ const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString(
 
 const MODELS = parseModels(
   [
-    { id: "@cf/openai/gpt-oss-120b", label: "gpt-oss-120b", note: "Default. Reliable with memory tools", tag: "tested", effort: ["low", "medium", "high"] },
-    { id: "@cf/openai/gpt-oss-20b", label: "gpt-oss-20b", note: "Smaller and faster", tag: "tested", effort: ["low", "medium", "high"] },
+    { id: "@cf/openai/gpt-oss-120b", label: "gpt-oss-120b", note: "Default. Reliable with memory tools", effort: ["low", "medium", "high"] },
+    { id: "@cf/openai/gpt-oss-20b", label: "gpt-oss-20b", note: "Smaller and faster", effort: ["low", "medium", "high"] },
   ],
   "@cf/openai/gpt-oss-120b",
 );
