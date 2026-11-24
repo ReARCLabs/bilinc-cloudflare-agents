@@ -68,6 +68,12 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const quoted = (s: string) => `"${s}"`;
 const MAX_LOG_CHARS = 120;
 
+/** search_context's answer when nothing matched (the agents SDK context tools: `?? "No results found."`). */
+export const NO_RESULTS_TEXT = "No results found.";
+/** bilinc_checkpoints' answer for a project without checkpoints (NOTICES.noCheckpoints in src/errors.ts). */
+export const NO_CHECKPOINTS_TEXT =
+  "No checkpoints exist yet, so there is nothing to diff against or roll back to. Use bilinc_history to read earlier values of an entry, or bilinc_checkpoint to create a checkpoint now.";
+
 export function isRollbackPreview(v: unknown): v is RollbackPreviewResult {
   return isObj(v) && typeof v.previewId === "string";
 }
@@ -154,8 +160,10 @@ function approvalInput(input: Record<string, unknown>): ApprovalInfo["input"] {
 function finished(tool: string, output: unknown): { label: string; log: string[] } | null {
   switch (tool) {
     case "search_context": {
-      if (typeof output !== "string" || output.startsWith("Error:")) return null;
+      // Failures arrive as notice strings ("Bilinc memory is unavailable right now"), not only as "Error: …".
+      if (typeof output !== "string") return null;
       const hits = parseHits(output);
+      if (hits.length === 0 && output !== NO_RESULTS_TEXT) return null;
       return { label: hits.length > 0 ? `Searched memory: ${hits.length} found` : "Searched memory: nothing found", log: hits.slice(0, 3).map((h) => `· ${h.key}`) };
     }
     case "set_context": {
@@ -165,6 +173,7 @@ function finished(tool: string, output: unknown): { label: string; log: string[]
     case "bilinc_checkpoint":
       return isObj(output) && typeof output.id === "string" ? { label: `Saved the checkpoint ${quoted(str(output.label) || output.id)}`, log: [`· ${output.id}`] } : null;
     case "bilinc_checkpoints": {
+      if (output === NO_CHECKPOINTS_TEXT) return { label: "No checkpoints yet", log: [] };
       if (!isObj(output) || !Array.isArray(output.checkpoints)) return null;
       const list = output.checkpoints.filter(isObj).map((c) => ({ id: str(c.id), label: typeof c.label === "string" ? c.label : null }));
       return { label: `Listed ${plural(list.length, "checkpoint")}`, log: list.slice(0, 3).map((c) => `· ${checkpointTitle(c)}`) };

@@ -5,7 +5,8 @@ import { rejectedByUserOutput } from "../src/constants";
 import { ApprovalStep, NO_PREVIEW_TEXT } from "../src/client/ApprovalStep";
 import { parseHits } from "../src/client/memory-hits";
 import { StepList } from "../src/client/StepList";
-import { buildSteps, findPreview, isThinking, partSteps, type RollbackPreviewResult, type Step } from "../src/client/steps";
+import { buildSteps, findPreview, isThinking, NO_CHECKPOINTS_TEXT, NO_RESULTS_TEXT, partSteps, type RollbackPreviewResult, type Step } from "../src/client/steps";
+import { NOTICES } from "../../src/errors";
 import { Thinking } from "../src/client/Thinking";
 import { updateTiming, workedFor, type Timing } from "../src/client/timing";
 
@@ -121,6 +122,26 @@ describe("partSteps", () => {
     const withReason = partSteps(part("bilinc_rollback", "output-available", { input: { previewId: "p-1" }, output: rejectedByUserOutput("keep red") }));
     expect(labels(withReason)).toEqual([["rejected", "You rejected the rollback"]]);
     expect(withReason[0]!.log).toEqual(['"keep red"']);
+  });
+
+  it("shows a search_context notice as a failure, and only the no-results text or entries as a search", () => {
+    for (const notice of [NOTICES.unavailable, NOTICES.keyInvalid, NOTICES.creditsExhausted, NOTICES.notOnPlanRecall, 'Error: "x" is not searchable. Searchable blocks: memory']) {
+      const failed = partSteps(part("search_context", "output-available", { output: notice }));
+      expect(labels(failed)).toEqual([["error", "Could not search memory"]]);
+      expect(failed[0]!.log).toEqual([notice]);
+    }
+    expect(labels(partSteps(part("search_context", "output-available", { output: NO_RESULTS_TEXT })))).toEqual([["done", "Searched memory: nothing found"]]);
+    expect(labels(partSteps(part("search_context", "output-available", { output: { hits: [] } })))).toEqual([["error", "Could not search memory"]]);
+  });
+
+  it("pins the notice texts the step list matches to their sources", () => {
+    expect(NO_RESULTS_TEXT).toBe("No results found.");
+    expect(NO_CHECKPOINTS_TEXT).toBe(NOTICES.noCheckpoints);
+  });
+
+  it("shows an empty checkpoint list as done, not as a failure", () => {
+    expect(labels(partSteps(part("bilinc_checkpoints", "output-available", { output: NOTICES.noCheckpoints })))).toEqual([["done", "No checkpoints yet"]]);
+    expect(labels(partSteps(part("bilinc_checkpoints", "output-available", { output: NOTICES.unavailable })))).toEqual([["error", "Could not list checkpoints"]]);
   });
 
   it("falls back to the tool name for an unknown tool", () => {
