@@ -1,11 +1,12 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ToolUIPart, UIMessage } from "ai";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { rejectedByUserOutput } from "../src/constants";
 import { ApprovalStep, NO_PREVIEW_TEXT } from "../src/client/ApprovalStep";
 import { parseHits } from "../src/client/memory-hits";
 import { StepList } from "../src/client/StepList";
-import { buildSteps, findPreview, isThinking, NO_CHECKPOINTS_TEXT, NO_RESULTS_TEXT, partSteps, SAVED_NOTICE_PREFIX, type RollbackPreviewResult, type Step } from "../src/client/steps";
+import { buildSteps, findPreview, isThinking, NO_CHECKPOINTS_TEXT, NO_RESULTS_TEXT, partSteps, SAVED_NOTICE_PREFIX, SEARCH_HEADER, type RollbackPreviewResult, type Step } from "../src/client/steps";
 import { NOTICES } from "../../src/errors";
 import { Thinking } from "../src/client/Thinking";
 import { updateTiming, workedFor, type Timing } from "../src/client/timing";
@@ -138,6 +139,15 @@ describe("partSteps", () => {
     const withReason = partSteps(part("bilinc_rollback", "output-available", { input: { previewId: "p-1" }, output: rejectedByUserOutput("keep red") }));
     expect(labels(withReason)).toEqual([["rejected", "You rejected the rollback"]]);
     expect(withReason[0]!.log).toEqual(['"keep red"']);
+  });
+
+  it("shows a search whose entries were all too long to show as a search that found them", () => {
+    const provider = readFileSync("../src/provider.ts", "utf8");
+    expect(provider).toContain(`const SEARCH_HEADER = ${JSON.stringify(SEARCH_HEADER)};`);
+    const found = partSteps(part("search_context", "output-available", { output: `${SEARCH_HEADER}\n3 more omitted` }));
+    expect(labels(found)).toEqual([["done", "Searched memory: 3 found (too long to show)"]]);
+    expect(found[0]!.log).toEqual([]);
+    expect(labels(partSteps(part("search_context", "output-available", { output: SEARCH_HEADER })))).toEqual([["done", "Searched memory: found entries too long to show"]]);
   });
 
   it("shows a search_context notice as a failure, and only the no-results text or entries as a search", () => {
