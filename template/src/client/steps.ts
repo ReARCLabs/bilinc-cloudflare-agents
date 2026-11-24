@@ -70,6 +70,12 @@ const MAX_LOG_CHARS = 120;
 
 /** search_context's answer when nothing matched (the agents SDK context tools: `?? "No results found."`). */
 export const NO_RESULTS_TEXT = "No results found.";
+/**
+ * Start of the memory block's "the entry was saved, with a caveat" notices (src/provider.ts setMessage), e.g.
+ * "saved, but a credential was removed from the text". The provider throws it, so it reaches the chat as "Error: saved, …".
+ */
+export const SAVED_NOTICE_PREFIX = "saved,";
+
 /** bilinc_checkpoints' answer for a project without checkpoints (NOTICES.noCheckpoints in src/errors.ts). */
 export const NO_CHECKPOINTS_TEXT =
   "No checkpoints exist yet, so there is nothing to diff against or roll back to. Use bilinc_history to read earlier values of an entry, or bilinc_checkpoint to create a checkpoint now.";
@@ -167,8 +173,11 @@ function finished(tool: string, output: unknown): { label: string; log: string[]
       return { label: hits.length > 0 ? `Searched memory: ${hits.length} found` : "Searched memory: nothing found", log: hits.slice(0, 3).map((h) => `· ${h.key}`) };
     }
     case "set_context": {
-      const m = /^Indexed "([^"]+)"/.exec(str(output));
-      return m ? { label: `Saved ${quoted(m[1]!)}`, log: [] } : null;
+      const text = str(output);
+      const m = /^Indexed "([^"]+)"/.exec(text);
+      if (m) return { label: `Saved ${quoted(m[1]!)}`, log: [] };
+      const notice = text.replace(/^Error: /, "");
+      return notice.startsWith(SAVED_NOTICE_PREFIX) ? { label: "Saved to memory", log: [notice.slice(0, MAX_LOG_CHARS)] } : null;
     }
     case "bilinc_checkpoint":
       return isObj(output) && typeof output.id === "string" ? { label: `Saved the checkpoint ${quoted(str(output.label) || output.id)}`, log: [`· ${output.id}`] } : null;

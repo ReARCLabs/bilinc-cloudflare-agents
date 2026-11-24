@@ -5,7 +5,7 @@ import { rejectedByUserOutput } from "../src/constants";
 import { ApprovalStep, NO_PREVIEW_TEXT } from "../src/client/ApprovalStep";
 import { parseHits } from "../src/client/memory-hits";
 import { StepList } from "../src/client/StepList";
-import { buildSteps, findPreview, isThinking, NO_CHECKPOINTS_TEXT, NO_RESULTS_TEXT, partSteps, type RollbackPreviewResult, type Step } from "../src/client/steps";
+import { buildSteps, findPreview, isThinking, NO_CHECKPOINTS_TEXT, NO_RESULTS_TEXT, partSteps, SAVED_NOTICE_PREFIX, type RollbackPreviewResult, type Step } from "../src/client/steps";
 import { NOTICES } from "../../src/errors";
 import { Thinking } from "../src/client/Thinking";
 import { updateTiming, workedFor, type Timing } from "../src/client/timing";
@@ -137,11 +137,21 @@ describe("partSteps", () => {
   it("pins the notice texts the step list matches to their sources", () => {
     expect(NO_RESULTS_TEXT).toBe("No results found.");
     expect(NO_CHECKPOINTS_TEXT).toBe(NOTICES.noCheckpoints);
+    expect(NOTICES.secretRedacted.startsWith(SAVED_NOTICE_PREFIX)).toBe(true);
   });
 
   it("shows an empty checkpoint list as done, not as a failure", () => {
     expect(labels(partSteps(part("bilinc_checkpoints", "output-available", { output: NOTICES.noCheckpoints })))).toEqual([["done", "No checkpoints yet"]]);
     expect(labels(partSteps(part("bilinc_checkpoints", "output-available", { output: NOTICES.unavailable })))).toEqual([["error", "Could not list checkpoints"]]);
+  });
+
+  it("shows a save whose credential was removed as done, with the notice as a log line", () => {
+    const output = `Error: ${NOTICES.secretRedacted}`;
+    const saved = partSteps(part("set_context", "output-available", { output }));
+    expect(labels(saved)).toEqual([["done", "Saved to memory"]]);
+    expect(saved[0]!.log).toEqual([NOTICES.secretRedacted]);
+    expect(labels(partSteps(part("set_context", "output-available", { output: `Error: ${NOTICES.secretDetected}` })))).toEqual([["error", "Could not save to memory"]]);
+    expect(labels(partSteps(part("set_context", "output-available", { output: `Error: ${NOTICES.outcomeUnknown}` })))).toEqual([["error", "Could not save to memory"]]);
   });
 
   it("falls back to the tool name for an unknown tool", () => {
