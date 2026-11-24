@@ -22,7 +22,8 @@ export const EXPIRY_WAIT_MS = 301_000;
 export const CREDIT_SETTLE_ATTEMPTS = 4;
 export const CREDIT_SETTLE_DELAY_MS = 1_500;
 export const GATE_BASE_URL = 'https://bilinc.space';
-// Credits per event as the package documents them; credits.unit-costs checks them against status usage[].creditsEach.
+// Credits per event as the package documents them: the one source of the metered per-call costs,
+// and what credits.unit-costs checks status usage[].creditsEach against.
 export const DOCUMENTED_UNIT_COSTS = Object.freeze({ memory_write: 1, recall: 1, snapshot: 2, rollback: 2 });
 const STATUS_READ_TIMEOUT_MS = 15_000;
 
@@ -228,7 +229,10 @@ export async function runGate({
     if (typeof value !== 'number') throw new Error('status.credits.availableTotalCredits is not a number');
     return value;
   };
-  const measured = async (id, cost, call) => {
+  // eventType is the billed usage event of a call (a DOCUMENTED_UNIT_COSTS key; forget is a memory_write), or null for a free call.
+  const measured = async (id, eventType, call) => {
+    if (eventType !== null && !Object.hasOwn(DOCUMENTED_UNIT_COSTS, eventType)) throw new Error(`unknown usage event type ${eventType}`);
+    const cost = eventType === null ? 0 : DOCUMENTED_UNIT_COSTS[eventType];
     if (unmetered) {
       try {
         return { value: await call(), error: undefined };
@@ -338,10 +342,10 @@ export async function runGate({
       }
     };
 
-    const listed = await measured('list', 0, () => client.list({ prefix, order: 'newest', values: 'none', limit: 10 }));
+    const listed = await measured('list', null, () => client.list({ prefix, order: 'newest', values: 'none', limit: 10 }));
     check('list.order-newest', 'G5', listed.error === undefined, describeError(listed.error));
 
-    const first = await measured('commit', 1, () => commit(fact, 'The gate test colour is blue.'));
+    const first = await measured('commit', 'memory_write', () => commit(fact, 'The gate test colour is blue.'));
     check(
       'commit.shape',
       'G6',
@@ -350,7 +354,7 @@ export async function runGate({
     );
 
     const label = `${CHECKPOINT_LABEL_PREFIX}${runId}`;
-    const created = await measured('createSnapshot', 2, () => client.createSnapshot({ label }));
+    const created = await measured('createSnapshot', 'snapshot', () => client.createSnapshot({ label }));
     const snapshotId = created.value?.id;
     check(
       'createSnapshot.shape',
@@ -360,7 +364,7 @@ export async function runGate({
     );
     if (typeof snapshotId !== 'string') return finish();
 
-    const listedSnapshots = await measured('listSnapshots', 0, () => client.listSnapshots({ limit: 20 }));
+    const listedSnapshots = await measured('listSnapshots', null, () => client.listSnapshots({ limit: 20 }));
     const newest = listedSnapshots.value?.[0];
     check(
       'listSnapshots.newest-first',
@@ -373,16 +377,16 @@ export async function runGate({
       listedSnapshots.error === undefined ? `newest ${String(newest?.id)}` : describeError(listedSnapshots.error),
     );
 
-    const second = await measured('commit.upsert', 1, () => commit(fact, 'The gate test colour is red.'));
+    const second = await measured('commit.upsert', 'memory_write', () => commit(fact, 'The gate test colour is red.'));
     check('commit.upsert.accepted', 'G7', second.error === undefined, describeError(second.error));
-    const history = await measured('history', 0, () => client.history({ key: fact, values: 'preview', limit: 20 }));
+    const history = await measured('history', null, () => client.history({ key: fact, values: 'preview', limit: 20 }));
     check(
       'commit.upsert.history',
       'G7',
       history.error === undefined && history.value.exists === true && history.value.entries.length >= 2,
       history.error === undefined ? `${history.value.entries.length} versions` : describeError(history.error),
     );
-    const afterUpsert = await measured('list.after-upsert', 0, () => client.list({ prefix, order: 'newest', values: 'none', limit: 10 }));
+    const afterUpsert = await measured('list.after-upsert', null, () => client.list({ prefix, order: 'newest', values: 'none', limit: 10 }));
     check(
       'commit.upsert.total',
       'G7',
@@ -392,7 +396,7 @@ export async function runGate({
       afterUpsert.error === undefined ? `total ${afterUpsert.value.total}` : describeError(afterUpsert.error),
     );
 
-    const recalled = await measured('recall', 1, () => client.recall({ query: 'gate test colour', profile: 'balanced', limit: 20 }));
+    const recalled = await measured('recall', 'recall', () => client.recall({ query: 'gate test colour', profile: 'balanced', limit: 20 }));
     const hit = recalled.value?.find((candidate) => candidate.key === fact);
     check(
       'recall.shape',
@@ -409,7 +413,7 @@ export async function runGate({
           : 'hit for the committed key',
     );
 
-    const diffed = await measured('diff', 0, () => client.diff({ fromSnapshotId: snapshotId, includeValues: false, limit: 100 }));
+    const diffed = await measured('diff', null, () => client.diff({ fromSnapshotId: snapshotId, includeValues: false, limit: 100 }));
     check(
       'diff.shape',
       'G6',
@@ -418,24 +422,24 @@ export async function runGate({
     );
 
     const samples = secretSamples();
-    const redacted = await measured('commit.secret-redacted', 1, () => commit(redactedKey, samples.assignment));
+    const redacted = await measured('commit.secret-redacted', 'memory_write', () => commit(redactedKey, samples.assignment));
     check(
       'secret_scan.redacted',
       'G5',
       redacted.error === undefined && redacted.value.warnings.some((warning) => warning.code === 'secret_redacted'),
       redacted.error === undefined ? `${redacted.value.warnings.length} warnings` : describeError(redacted.error),
     );
-    const refused = await measured('commit.secret-detected', 0, () => commit(refusedKey, samples.providerShaped));
+    const refused = await measured('commit.secret-detected', null, () => commit(refusedKey, samples.providerShaped));
     expectError('secret_scan.detected', 'G5', refused.error, 'secret_detected', 422);
 
-    const missing = await measured('diff.unknown-checkpoint', 0, () =>
+    const missing = await measured('diff.unknown-checkpoint', null, () =>
       client.diff({ fromSnapshotId: `gate-missing-${runId}`, includeValues: false, limit: 10 }),
     );
     expectError('error-body.snapshot_not_found', 'G10', missing.error, 'snapshot_not_found', 404);
 
-    await measured('commit.other-namespace', 1, () => commit(otherKey, 'Outside the gate namespace.', `${GATE_NAMESPACE}b`));
+    await measured('commit.other-namespace', 'memory_write', () => commit(otherKey, 'Outside the gate namespace.', `${GATE_NAMESPACE}b`));
     const reason = `gate: restore ${runId}`;
-    const preview = await measured('rollbackPreview', 0, () => client.rollbackPreview({ snapshotId, reason, limit: 100 }));
+    const preview = await measured('rollbackPreview', null, () => client.rollbackPreview({ snapshotId, reason, limit: 100 }));
     const planned = preview.value;
     check(
       'preview.project-wide',
@@ -457,18 +461,18 @@ export async function runGate({
       `expires in ${Math.round(ttl / 1000)} s`,
     );
 
-    const rolled = await measured('rollback', 2, () => client.rollback({ snapshotId, reason, confirmationToken: planned.confirmationToken }));
+    const rolled = await measured('rollback', 'rollback', () => client.rollback({ snapshotId, reason, confirmationToken: planned.confirmationToken }));
     check(
       'rollback.execute',
       'G10',
       rolled.error === undefined && rolled.value.snapshotId === snapshotId && rolled.value.counts.deleted >= 2 && rolled.value.counts.updated >= 1,
       rolled.error === undefined ? `counts ${JSON.stringify(rolled.value.counts)}` : describeError(rolled.error),
     );
-    const replay = await measured('rollback.reused-token', 0, () =>
+    const replay = await measured('rollback.reused-token', null, () =>
       client.rollback({ snapshotId, reason, confirmationToken: planned.confirmationToken }),
     );
     expectError('token.single-use', 'G10', replay.error, 'state_changed_since_preview', 409);
-    const restored = await measured('diff.after-rollback', 0, () => client.diff({ fromSnapshotId: snapshotId, includeValues: false, limit: 100 }));
+    const restored = await measured('diff.after-rollback', null, () => client.diff({ fromSnapshotId: snapshotId, includeValues: false, limit: 100 }));
     const runKeys =
       restored.error === undefined
         ? [...restored.value.added, ...restored.value.modified, ...restored.value.removed].filter((key) => key.includes(`gate-${runId}-`))
@@ -484,22 +488,22 @@ export async function runGate({
     if (restoredOk) for (const key of [redactedKey, refusedKey, otherKey]) leftover.delete(key);
 
     if (waitForExpiry) {
-      await measured('commit.expiry-setup', 1, () => commit(fact, 'The gate test colour is green.'));
+      await measured('commit.expiry-setup', 'memory_write', () => commit(fact, 'The gate test colour is green.'));
       const lateReason = `gate: expiry ${runId}`;
-      const late = await measured('rollbackPreview.expiry', 0, () => client.rollbackPreview({ snapshotId, reason: lateReason, limit: 10 }));
+      const late = await measured('rollbackPreview.expiry', null, () => client.rollbackPreview({ snapshotId, reason: lateReason, limit: 10 }));
       if (late.value === undefined) {
         check('token.expires-300s', 'G10', false, `preview failed: ${describeError(late.error)}`);
       } else {
         log(`waiting ${Math.round(EXPIRY_WAIT_MS / 1000)} s for the preview token to expire`);
         await sleep(EXPIRY_WAIT_MS);
-        const expired = await measured('rollback.expired-token', 0, () =>
+        const expired = await measured('rollback.expired-token', null, () =>
           client.rollback({ snapshotId, reason: lateReason, confirmationToken: late.value.confirmationToken }),
         );
         expectError('token.expires-300s', 'G10', expired.error, 'rollback_confirmation_expired', 410);
       }
     }
 
-    const forgotten = await measured('forget', 1, () => client.forget({ key: fact, reason: `gate: cleanup ${runId}` }));
+    const forgotten = await measured('forget', 'memory_write', () => client.forget({ key: fact, reason: `gate: cleanup ${runId}` }));
     const forgotOk = forgotten.error === undefined && forgotten.value.removed === true && forgotten.value.key === fact;
     check('forget.removed', 'G10', forgotOk, describeError(forgotten.error));
     if (forgotOk) leftover.delete(fact);

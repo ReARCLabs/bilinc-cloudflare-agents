@@ -6,7 +6,7 @@ export declare const EXPIRY_WAIT_MS: number;
 export declare const CREDIT_SETTLE_ATTEMPTS: number;
 export declare const CREDIT_SETTLE_DELAY_MS: number;
 export declare const GATE_BASE_URL: string;
-/** Credits per event as the package documents them; credits.unit-costs checks them against status usage[].creditsEach. */
+/** Credits per event as the package documents them: the one source of the metered per-call costs (forget is a memory_write), and what credits.unit-costs checks status usage[].creditsEach against. */
 export declare const DOCUMENTED_UNIT_COSTS: Readonly<{ memory_write: 1; recall: 1; snapshot: 2; rollback: 2 }>;
 
 export interface GateCheck {

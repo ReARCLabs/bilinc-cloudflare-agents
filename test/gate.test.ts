@@ -515,6 +515,13 @@ describe('runGate against a fake Bilinc', () => {
     expect(lines.join('\n')).not.toContain('bil_live_abc123XYZ');
   });
 
+  it('takes every metered call cost from DOCUMENTED_UNIT_COSTS: no measured() call names a numeric cost', () => {
+    const source = readFileSync(fileURLToPath(new URL('../scripts/gate.mjs', import.meta.url)), 'utf8');
+    const calls = [...source.matchAll(/\bmeasured\(\s*'[^']+',\s*([^,]+),/g)].map((match) => match[1]?.trim());
+    expect(calls.length).toBeGreaterThan(15);
+    expect(calls.filter((cost) => !/^(null|'(memory_write|recall|snapshot|rollback)')$/.test(cost ?? ''))).toEqual([]);
+  });
+
   it('logs one PASS or FAIL line per check', async () => {
     const fake = fakeBilinc();
     const lines: string[] = [];
