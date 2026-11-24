@@ -573,12 +573,12 @@ describe("Chat", () => {
     const fetchMock = vi.fn(async (_url: string) => new Response(JSON.stringify(body), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const { props } = renderChat();
-    await waitFor(() => expect(props.onBilincState).toHaveBeenCalledTimes(0));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(props.onBilincState).toHaveBeenCalledWith("ok"));
     body = { state: "unreachable", checkpoints: [], now: null };
     fireEvent.click(screen.getByRole("button", { name: "History" }));
     await waitFor(() => expect(props.onFailure).toHaveBeenCalledOnce());
-    expect(props.onBilincState).not.toHaveBeenCalled();
+    expect(props.onBilincState.mock.calls).toEqual([["ok"]]);
     expect(await screen.findByText("Before tea change")).toBeTruthy();
   });
 
@@ -587,6 +587,16 @@ describe("Chat", () => {
     const { props } = renderChat();
     await waitFor(() => expect(props.onBilincState).toHaveBeenCalledWith("key_invalid"));
     expect(props.onFailure).not.toHaveBeenCalled();
+  });
+
+  it("clears an old key banner when a later checkpoints read is ok", async () => {
+    let body: unknown = { state: "key_invalid", checkpoints: [], now: null };
+    vi.stubGlobal("fetch", vi.fn(async (_url: string) => new Response(JSON.stringify(body), { status: 200 })));
+    const { props } = renderChat();
+    await waitFor(() => expect(props.onBilincState).toHaveBeenCalledWith("key_invalid"));
+    body = CHECKPOINTS;
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    await waitFor(() => expect(props.onBilincState).toHaveBeenLastCalledWith("ok"));
   });
 
   it("refreshes the checkpoints after a turn that ran a bilinc tool", async () => {

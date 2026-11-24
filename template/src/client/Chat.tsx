@@ -45,6 +45,8 @@ export function Chat(p: {
       }
       if (result.state === "ok") {
         setCheckpoints(result);
+        // A good read clears a key banner an earlier read set.
+        callbacks.current.onBilincState("ok");
       } else if (result.state === "key_missing" || result.state === "key_invalid") {
         setCheckpoints(result);
         callbacks.current.onBilincState(result.state);

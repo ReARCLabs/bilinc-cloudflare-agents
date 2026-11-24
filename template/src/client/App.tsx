@@ -36,7 +36,7 @@ export function App() {
   }, []);
   useEffect(() => void refresh(), [refresh]);
 
-  // A key problem found by /api/checkpoints moves the banner; its other failures re-run /api/health (onFailure).
+  // An ok answer or a key problem from /api/checkpoints moves the banner; its other failures re-run /api/health (onFailure).
   const onBilincState = useCallback(
     (state: BilincHealthState) => setHealth((prev) => (prev && prev.state !== state ? { ...prev, state } : prev)),
     [],
