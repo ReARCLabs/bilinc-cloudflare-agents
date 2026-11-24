@@ -136,10 +136,10 @@ export function ModelSelector(p: { models: ModelEntry[]; choice: ModelChoice; on
         aria-label={triggerLabel}
         onClick={() => setOpen((o) => !o)}
       >
-        <span className="mk" aria-hidden="true">
-          {modelMark(current)}
-        </span>
-        <span className="mname">{current.label}</span>
+        {/* The mark is drawn from data-mark by CSS and a space separates the visible words, so the
+            button's visible text is a run of words of its accessible name (axe label-content-name-mismatch). */}
+        <span className="mk" aria-hidden="true" data-mark={modelMark(current)} />
+        <span className="mname">{current.label}</span>{" "}
         {levels && effort && (
           <>
             <span className="eg" aria-hidden="true">

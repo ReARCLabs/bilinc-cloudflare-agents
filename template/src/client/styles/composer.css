@@ -95,6 +95,7 @@
 .mrow:hover, .mrow:focus-visible { background: rgba(232, 238, 242, 0.06); }
 .mrow:focus-visible { outline: 2px solid var(--added); outline-offset: -2px; }
 .mrow .mk { margin-top: 3px; }
+.mk[data-mark]::before { content: attr(data-mark); }
 .mrow-text { min-width: 0; }
 .mrow b { display: block; font-weight: 500; font-size: 13.5px; color: var(--glass); }
 .mrow small { display: block; font-size: 12px; color: var(--g2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
