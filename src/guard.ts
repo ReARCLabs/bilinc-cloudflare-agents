@@ -53,7 +53,7 @@ export class Guard {
     }
   }
 
-  /** For tests and logs only. */
+  /** For tests and logs, and for the tools' check before a prompt refresh (see BREAKER_OPEN). */
   state(): { failures: number; open: boolean; openUntil: number } {
     const t = this.now();
     return { failures: this.failures, open: this.openUntil !== 0 && t < this.openUntil, openUntil: this.openUntil };

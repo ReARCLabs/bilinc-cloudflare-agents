@@ -52,6 +52,12 @@ export const BREAKER_THRESHOLD = 3;
 export const BREAKER_OPEN_MS = 60_000;
 export const BREAKER_RETRY_AFTER_CAP_MS = 600_000;
 
+/**
+ * Non-enumerable property of a createBilinc() instance: a function that says whether its breaker is
+ * open. Internal; the tools read it. A registry symbol, so two copies of the package still agree.
+ */
+export const BREAKER_OPEN = Symbol.for("bilinc-cloudflare-agents/breakerOpen");
+
 /** Billable calls (recall, commit, forget, createSnapshot, rollback) per sliding window. */
 export const RATE_CAP = 20;
 export const RATE_WINDOW_MS = 60_000;

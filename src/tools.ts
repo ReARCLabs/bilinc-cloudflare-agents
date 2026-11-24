@@ -2,6 +2,7 @@ import { tool } from "ai";
 import type { ToolSet } from "ai";
 import { z } from "zod";
 import {
+  BREAKER_OPEN,
   HISTORY_LIMIT,
   MAX_EXPECTED_VERSION_CHARS,
   MAX_LABEL_CHARS,
@@ -88,6 +89,12 @@ function previewStillUsable(error: unknown): boolean {
   );
 }
 
+/** True when this instance's breaker is open. False when the instance does not say (not from createBilinc()). */
+function breakerOpen(bilinc: Bilinc): boolean {
+  const probe = (bilinc as unknown as Record<symbol, unknown>)[BREAKER_OPEN];
+  return typeof probe === "function" && probe() === true;
+}
+
 /**
  * The seven bilinc_* tools. Synchronous and stateless: the breaker and cap live on `bilinc`, rollback
  * previews live in `store`. Every failure returns a notice string; no tool throws.
@@ -98,6 +105,9 @@ export function bilincTools(options: BilincToolsOptions): ToolSet {
 
   /** After a write that may have changed memory: a success, or a sent write with no definite answer. */
   async function memoryChanged(): Promise<void> {
+    // With the breaker open the summary's list call would be refused and the prompt would drop its key
+    // list for the static line. Keeping the last list is better; its header already says it may be out of date.
+    if (breakerOpen(bilinc)) return;
     try {
       await options.onMemoryChanged?.();
     } catch {
