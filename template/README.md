@@ -37,7 +37,7 @@ Set in `wrangler.jsonc` under `vars`:
 
 | Var | Default | Notes |
 |---|---|---|
-| `MODEL` | `@cf/zai-org/glm-4.7-flash` | Any Workers AI model with function calling. Fallbacks: `@cf/meta/llama-4-scout-17b-16e-instruct`, `@cf/openai/gpt-oss-120b`. |
+| `MODEL` | `@cf/openai/gpt-oss-120b` | Any Workers AI model with function calling. At the pre-publish test (2026-11-24) `@cf/zai-org/glm-4.7-flash` was too slow to answer a chat turn, and `@cf/meta/llama-4-scout-17b-16e-instruct` broke tool calls through `workers-ai-provider` 4.0.1. |
 | `BILINC_NAMESPACE` | `default` | 1–64 letters, digits, `_` or `-`. Changing it starts from an empty memory: entries under the old namespace stay in Bilinc but the agent no longer sees them. An invalid value stops the chat. |
 | `AUTO_CHECKPOINT` | `true` | `"false"`, `"0"`, `"off"` or `"no"` (in any case, spaces at either end ignored) turns the automatic checkpoint off; any other value leaves it on. Then an overwrite made before a manual checkpoint cannot be rolled back. |
 

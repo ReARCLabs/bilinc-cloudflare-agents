@@ -11,7 +11,7 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TestAgent", "UnlockLimiter"] }],
   "vars": {
-    "MODEL": "@cf/zai-org/glm-4.7-flash",
+    "MODEL": "@cf/openai/gpt-oss-120b",
     "BILINC_NAMESPACE": "default",
     "AUTO_CHECKPOINT": "false",
     "BILINC_API_KEY": "bil_live_test_key",

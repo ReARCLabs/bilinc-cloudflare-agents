@@ -27,7 +27,7 @@ describe("deploy configuration", () => {
       },
       migrations: [{ tag: "v1", new_sqlite_classes: ["BilincAgent", "UnlockLimiter"] }],
       assets: { not_found_handling: "single-page-application", run_worker_first: ["/api/*", "/agents/*"] },
-      vars: { MODEL: "@cf/zai-org/glm-4.7-flash", BILINC_NAMESPACE: "default", AUTO_CHECKPOINT: "true" },
+      vars: { MODEL: "@cf/openai/gpt-oss-120b", BILINC_NAMESPACE: "default", AUTO_CHECKPOINT: "true" },
       secrets: { required: ["BILINC_API_KEY", "APP_ACCESS_TOKEN"] },
     });
   });
