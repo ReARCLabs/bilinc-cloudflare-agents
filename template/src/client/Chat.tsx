@@ -43,8 +43,16 @@ export function Chat(p: {
         callbacks.current.onFailure();
         return;
       }
-      setCheckpoints(result);
-      callbacks.current.onBilincState(result.state);
+      if (result.state === "ok") {
+        setCheckpoints(result);
+      } else if (result.state === "key_missing" || result.state === "key_invalid") {
+        setCheckpoints(result);
+        callbacks.current.onBilincState(result.state);
+      } else {
+        // One failed read says little about Bilinc: keep a list already shown and let /api/health decide the banner.
+        setCheckpoints((shown) => (shown?.state === "ok" ? shown : result));
+        callbacks.current.onFailure();
+      }
     } catch {
       // Keep the list already shown; /api/health decides about the banner.
     }

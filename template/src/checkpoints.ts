@@ -21,7 +21,7 @@ const failed = (state: BilincHealthState): CheckpointsBody => ({ state, checkpoi
 
 /**
  * The History list: two free reads, one after the other (listSnapshots, then a one-entry list for
- * the total). Never throws and never writes. An empty key or an invalid namespace answers without
+ * the total; when only the total fails, `now` is null). Never throws and never writes. An empty key or an invalid namespace answers without
  * a request.
  */
 export async function readCheckpoints(env: Pick<Env, "BILINC_API_KEY" | "BILINC_NAMESPACE">): Promise<CheckpointsBody> {
@@ -35,12 +35,10 @@ export async function readCheckpoints(env: Pick<Env, "BILINC_API_KEY" | "BILINC_
   }
   try {
     const snapshots = await bilinc.client.listSnapshots({ limit: CHECKPOINT_LIST_LIMIT });
-    const page = await bilinc.client.list({ limit: 1, values: "none" });
-    return {
-      state: "ok",
-      checkpoints: snapshots.map(({ id, label, createdAt, totalEntries }) => ({ id, label, createdAt, totalEntries })),
-      now: { total: page.total },
-    };
+    const checkpoints = snapshots.map(({ id, label, createdAt, totalEntries }) => ({ id, label, createdAt, totalEntries }));
+    // The list is the answer; a failed count read only leaves out the "now" row.
+    const total = await bilinc.client.list({ limit: 1, values: "none" }).then((page) => page.total, () => null);
+    return { state: "ok", checkpoints, now: total === null ? null : { total } };
   } catch (error) {
     if (isBilincError(error) && error.code === "missing_api_key") return failed("key_missing");
     if (isBilincError(error) && error.code === "invalid_api_key") return failed("key_invalid");

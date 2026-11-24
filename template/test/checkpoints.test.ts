@@ -72,4 +72,13 @@ describe("GET /api/checkpoints", () => {
     bilinc.override("GET /memory/snapshots", () => htmlPage(503));
     expect((await checkpoints()).body).toEqual({ state: "unreachable", checkpoints: [], now: null });
   });
+
+  it("keeps the checkpoints when only the count read fails, with now: null", async () => {
+    await seed("POST", "/memory/snapshots", { label: "Before tea change" });
+    bilinc.override("POST /memory/list", () => htmlPage(503));
+    const b = (await checkpoints()).body as CheckpointsBody;
+    expect(b.state).toBe("ok");
+    expect(b.now).toBeNull();
+    expect(b.checkpoints.map((c) => c.id)).toEqual(["snap_1"]);
+  });
 });

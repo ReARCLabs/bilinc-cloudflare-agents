@@ -513,6 +513,27 @@ describe("Chat", () => {
     expect(hooks.chat.stop).toHaveBeenCalledOnce();
   });
 
+  it("re-checks /api/health instead of showing unreachable when a checkpoints read fails, and keeps the list", async () => {
+    let body: unknown = CHECKPOINTS;
+    const fetchMock = vi.fn(async (_url: string) => new Response(JSON.stringify(body), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { props } = renderChat();
+    await waitFor(() => expect(props.onBilincState).toHaveBeenCalledTimes(0));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    body = { state: "unreachable", checkpoints: [], now: null };
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    await waitFor(() => expect(props.onFailure).toHaveBeenCalledOnce());
+    expect(props.onBilincState).not.toHaveBeenCalled();
+    expect(await screen.findByText("Before tea change")).toBeTruthy();
+  });
+
+  it("updates the banner only for a key problem found by the checkpoints read", async () => {
+    serveCheckpoints({ state: "key_invalid", checkpoints: [], now: null });
+    const { props } = renderChat();
+    await waitFor(() => expect(props.onBilincState).toHaveBeenCalledWith("key_invalid"));
+    expect(props.onFailure).not.toHaveBeenCalled();
+  });
+
   it("refreshes the checkpoints after a turn that ran a bilinc tool", async () => {
     const fetchMock = serveCheckpoints();
     hooks.chat.status = "streaming";
@@ -549,10 +570,13 @@ describe("Chat", () => {
     expect(hooks.chat.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("passes the Bilinc state from /api/checkpoints to the banner", async () => {
+  it("leaves an unreachable /api/checkpoints to /api/health, and History says it cannot read them", async () => {
     serveCheckpoints({ state: "unreachable", checkpoints: [], now: null });
     const { props } = renderChat();
-    await waitFor(() => expect(props.onBilincState).toHaveBeenCalledWith("unreachable"));
+    await waitFor(() => expect(props.onFailure).toHaveBeenCalled());
+    expect(props.onBilincState).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    expect(await screen.findByText("Checkpoints cannot be read right now.")).toBeTruthy();
   });
 
   it("reports a session that ended, from /api/checkpoints", async () => {
