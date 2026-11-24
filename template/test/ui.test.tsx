@@ -599,6 +599,29 @@ describe("Chat", () => {
     await waitFor(() => expect(props.onBilincState).toHaveBeenLastCalledWith("ok"));
   });
 
+  it("re-checks /api/health at most once per 10 s for failed checkpoints reads", async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const fetchMock = serveCheckpoints({ state: "unreachable", checkpoints: [], now: null });
+    const { props } = renderChat();
+    await waitFor(() => expect(props.onFailure).toHaveBeenCalledTimes(1));
+    const history = screen.getByRole("button", { name: "History" });
+    const reopen = async (reads: number) => {
+      while (fetchMock.mock.calls.length < reads) {
+        fireEvent.click(history);
+        await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(0));
+      }
+      await new Promise((r) => setTimeout(r, 0));
+    };
+    await reopen(2);
+    now += 9_999;
+    await reopen(3);
+    expect(props.onFailure).toHaveBeenCalledTimes(1);
+    now += 1;
+    await reopen(4);
+    await waitFor(() => expect(props.onFailure).toHaveBeenCalledTimes(2));
+  });
+
   it("refreshes the checkpoints after a turn that ran a bilinc tool", async () => {
     const fetchMock = serveCheckpoints();
     hooks.chat.status = "streaming";

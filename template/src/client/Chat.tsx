@@ -11,6 +11,8 @@ import { ranBilincTool } from "./steps";
 import { useToolTiming } from "./timing";
 import { useModelChoice } from "./use-model-choice";
 
+const HEALTH_RECHECK_MS = 10_000;
+
 /** Every hook of the chat: the agent socket, the model choice, the checkpoints. ChatScreen draws it. */
 export function Chat(p: {
   chatId: string;
@@ -36,6 +38,8 @@ export function Chat(p: {
 
   const callbacks = useRef(p);
   callbacks.current = p;
+  // A failed read re-checks /api/health at most once per HEALTH_RECHECK_MS, however often History opens.
+  const lastRecheck = useRef(-Infinity);
   const refreshCheckpoints = useCallback(async () => {
     try {
       const result = await fetchCheckpoints();
@@ -53,7 +57,10 @@ export function Chat(p: {
       } else {
         // One failed read says little about Bilinc: keep a list already shown and let /api/health decide the banner.
         setCheckpoints((shown) => (shown?.state === "ok" ? shown : result));
-        callbacks.current.onFailure();
+        if (Date.now() - lastRecheck.current >= HEALTH_RECHECK_MS) {
+          lastRecheck.current = Date.now();
+          callbacks.current.onFailure();
+        }
       }
     } catch {
       // Keep the list already shown; /api/health decides about the banner.
