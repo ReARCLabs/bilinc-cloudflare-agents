@@ -125,7 +125,10 @@ describe("useModelChoice", () => {
   it("starts from the chat's stored choice or the default, then keeps the user's pick", () => {
     const { rerender } = render(<Probe config={null} />);
     expect(screen.getByRole("button").textContent).toBe("none");
+    // No choice is claimed until the chat's state has arrived.
     rerender(<Probe config={CONFIG} />);
+    expect(screen.getByRole("button").textContent).toBe("none");
+    rerender(<Probe config={CONFIG} server={{ model: null, effort: null }} />);
     expect(screen.getByRole("button").textContent).toBe(`${BIG} medium`);
     rerender(<Probe config={CONFIG} server={{ model: SMALL, effort: "low" }} />);
     expect(screen.getByRole("button").textContent).toBe(`${SMALL} low`);

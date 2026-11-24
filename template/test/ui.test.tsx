@@ -284,6 +284,7 @@ describe("App", () => {
       models: [{ id: "@cf/openai/gpt-oss-120b", label: "gpt-oss-120b", note: "", tag: "tested", effort: ["low", "medium", "high"] }],
     };
     mockFetch((url) => (url === "/api/models" ? new Response(JSON.stringify(models), { status: 200 }) : new Response('{"state":"ok"}', { status: 200 })));
+    hooks.agentState = { model: null, effort: null };
     render(<App />);
     expect(await screen.findByRole("button", { name: "Model: gpt-oss-120b, Medium reasoning. Change" })).toBeTruthy();
   });
@@ -527,22 +528,20 @@ describe("Chat", () => {
   it("sends no model before the chat's state arrives, then the stored choice", async () => {
     serveCheckpoints();
     const { rerender, props } = renderChat();
-    await screen.findByRole("button", { name: /^Model:/ });
+    const loading = await screen.findByRole("button", { name: "Loading model…" });
+    expect((loading as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: /^Model:/ })).toBeNull();
     expect(hooks.chatOptions?.body?.()).toEqual({});
     hooks.agentState = { model: "@cf/openai/gpt-oss-120b", effort: "high" };
     rerender(<Chat {...props} />);
     await waitFor(() => expect(hooks.chatOptions?.body?.()).toEqual({ model: "@cf/openai/gpt-oss-120b", effort: "high" }));
   });
 
-  it("sends the model choice in the chat body once the state arrived, and follows the selector before it", async () => {
+  it("sends the model choice in the chat body once the state arrived, and follows the selector", async () => {
     serveCheckpoints();
     hooks.agentState = { model: null, effort: null };
     renderChat();
     await waitFor(() => expect(hooks.chatOptions?.body?.()).toEqual({ model: "@cf/openai/gpt-oss-120b", effort: "medium" }));
-    cleanup();
-    hooks.agentState = undefined;
-    renderChat();
-    expect(hooks.chatOptions?.body?.()).toEqual({});
     fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
     fireEvent.click(screen.getByRole("radio", { name: /no-reasoning-model/ }));
     expect(hooks.chatOptions?.body?.()).toEqual({ model: "@cf/example/no-reasoning-model", effort: null });

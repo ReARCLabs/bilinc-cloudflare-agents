@@ -3,7 +3,8 @@ import { resolveChoice, type AgentUiState, type ModelChoice, type ModelsConfig }
 
 /**
  * The selector's value: the chat's stored choice (agent state from the Durable Object) until the
- * user picks one, checked against MODELS either way. Null until the allowlist has loaded.
+ * user picks one, checked against MODELS either way. Null until the allowlist and the agent state
+ * have both loaded.
  * The third value says whether the choice may be sent: only once the agent state has arrived or
  * the user has picked, so an early send cannot reset the chat's stored model to the default.
  */
@@ -28,5 +29,7 @@ export function useModelChoice(
     setChoice(next);
   }, []);
 
-  return [choice, change, picked || server !== undefined];
+  // Until the chat's state arrives the selector claims no model (it shows "Loading model…").
+  const sendable = picked || server !== undefined;
+  return [sendable ? choice : null, change, sendable];
 }

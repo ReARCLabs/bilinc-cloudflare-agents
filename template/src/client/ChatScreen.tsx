@@ -103,7 +103,19 @@ export function ChatScreen(p: ChatScreenProps) {
             setDraft("");
           }}
           onStop={p.onStop}
-          modelSlot={p.models && p.choice ? <ModelSelector models={p.models.models} choice={p.choice} onChange={p.onChoice} /> : undefined}
+          modelSlot={
+            p.models ? (
+              p.choice ? (
+                <ModelSelector models={p.models.models} choice={p.choice} onChange={p.onChoice} />
+              ) : (
+                <div className="msel">
+                  <button type="button" className="mtrig" disabled>
+                    <span className="mname">Loading model…</span>
+                  </button>
+                </div>
+              )
+            ) : undefined
+          }
         />
       </div>
     </div>
