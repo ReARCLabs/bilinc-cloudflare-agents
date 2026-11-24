@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CHECKPOINTS_CACHE_MS, resetCheckpointsCache, type CheckpointsBody } from "../src/checkpoints";
+import type { CheckpointsBody } from "../src/checkpoints";
 import { handleRequest } from "../src/server";
 import { htmlPage, installMockBilinc, TEST_API_KEY, type MockBilinc } from "./helpers/mock-bilinc";
 import { sessionCookie } from "./helpers/session";
@@ -25,7 +25,6 @@ async function seed(method: string, path: string, body: unknown): Promise<void> 
 describe("GET /api/checkpoints", () => {
   let bilinc: MockBilinc;
   beforeEach(() => {
-    resetCheckpointsCache();
     bilinc = installMockBilinc();
   });
   afterEach(() => {
@@ -86,20 +85,17 @@ describe("GET /api/checkpoints", () => {
     expect(b.checkpoints.map((c) => c.id)).toEqual(["snap_1"]);
   });
 
-  it("answers two quick calls with one upstream pair, and reads again after 5 s", async () => {
-    let now = 1_000_000;
-    vi.spyOn(Date, "now").mockImplementation(() => now);
+  it("reads Bilinc afresh on every call, with no cached answer", async () => {
     const pair = ["GET /memory/snapshots", "POST /memory/list"];
-    const a = await checkpoints();
-    now += CHECKPOINTS_CACHE_MS - 1;
-    expect(await checkpoints()).toEqual(a);
+    expect(((await checkpoints()).body as CheckpointsBody).checkpoints).toEqual([]);
+    await seed("POST", "/memory/snapshots", { label: "Just made" });
+    bilinc.calls.splice(0);
+    const b = (await checkpoints()).body as CheckpointsBody;
+    expect(b.checkpoints.map((c) => c.label)).toEqual(["Just made"]);
     expect(bilinc.calls.map((c) => `${c.method} ${c.path}`)).toEqual(pair);
-    now += 1;
-    await checkpoints();
-    expect(bilinc.calls.map((c) => `${c.method} ${c.path}`)).toEqual([...pair, ...pair]);
   });
 
-  it("keeps one cached answer per key and namespace", async () => {
+  it("answers each key on its own", async () => {
     await checkpoints();
     expect((await checkpoints({ BILINC_API_KEY: "bil_live_revoked" })).body).toEqual({ state: "key_invalid", checkpoints: [], now: null });
     expect(((await checkpoints()).body as CheckpointsBody).state).toBe("ok");

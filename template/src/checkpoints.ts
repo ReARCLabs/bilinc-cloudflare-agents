@@ -19,48 +19,20 @@ export const CHECKPOINT_LIST_LIMIT = 20;
 
 const failed = (state: BilincHealthState): CheckpointsBody => ({ state, checkpoints: [], now: null });
 
-/** How long one isolate reuses an answer: History opens and turn ends cannot flood Bilinc. */
-export const CHECKPOINTS_CACHE_MS = 5_000;
-
-/** Per isolate, per key and namespace: one Bilinc instance, and the latest answer (or the read in flight). */
-const clients = new Map<string, Bilinc>();
-// Only settled answers: a Worker must not await a promise that another request started (its I/O
-// belongs to that request, and it may be cancelled), so two calls at the same moment each read.
-const answers = new Map<string, { at: number; body: CheckpointsBody }>();
-
-/** Test hook: forget the cached instances and answers. */
-export function resetCheckpointsCache(): void {
-  clients.clear();
-  answers.clear();
-}
-
 /**
  * The History list: two free reads, one after the other (listSnapshots, then a one-entry list for
- * the total; when only the total fails, `now` is null). Never throws and never writes. An empty key
- * or an invalid namespace answers without a request. Each isolate reuses its Bilinc instance and
- * answers repeat calls within CHECKPOINTS_CACHE_MS of a settled answer (failures too) from that answer.
+ * the total; when only the total fails, `now` is null). Never throws and never writes. An empty key or an invalid namespace answers without
+ * a request.
  */
 export async function readCheckpoints(env: Pick<Env, "BILINC_API_KEY" | "BILINC_NAMESPACE">): Promise<CheckpointsBody> {
   const apiKey = typeof env.BILINC_API_KEY === "string" ? env.BILINC_API_KEY.trim() : "";
   if (!apiKey) return failed("key_missing");
-  const cacheKey = `${apiKey}\u0000${String(env.BILINC_NAMESPACE)}`;
-  let bilinc = clients.get(cacheKey);
-  if (!bilinc) {
-    try {
-      bilinc = createBilinc({ apiKey, namespace: env.BILINC_NAMESPACE });
-    } catch {
-      return failed("namespace_invalid");
-    }
-    clients.set(cacheKey, bilinc);
+  let bilinc: Bilinc;
+  try {
+    bilinc = createBilinc({ apiKey, namespace: env.BILINC_NAMESPACE });
+  } catch {
+    return failed("namespace_invalid");
   }
-  const cached = answers.get(cacheKey);
-  if (cached && Date.now() - cached.at < CHECKPOINTS_CACHE_MS) return cached.body;
-  const body = await read(bilinc);
-  answers.set(cacheKey, { at: Date.now(), body });
-  return body;
-}
-
-async function read(bilinc: Bilinc): Promise<CheckpointsBody> {
   try {
     const snapshots = await bilinc.client.listSnapshots({ limit: CHECKPOINT_LIST_LIMIT });
     const checkpoints = snapshots.map(({ id, label, createdAt, totalEntries }) => ({ id, label, createdAt, totalEntries }));
