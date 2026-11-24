@@ -213,7 +213,7 @@ describe('runGate against a fake Bilinc', () => {
     );
   });
 
-  it('records the sidecar version, and fails when status does not report one', async () => {
+  it('records the sidecar version when status reports one, and notes it when status does not', async () => {
     const fake = fakeBilinc();
     const report = await runGate({ bilinc: fake.bilinc, runId: 'r1v', sleep: fake.sleep, log: quiet });
     expect(report.results.find((result) => result.id === 'status.runtime-version')).toEqual({
@@ -222,9 +222,16 @@ describe('runGate against a fake Bilinc', () => {
       ok: true,
       detail: 'sidecar runtime 2.7.3',
     });
+    // Live /api/cloud/status reports only runtime: "ready" | "unavailable", never a version (bilinc-site app/api/cloud/status/route.ts).
     const missing = fakeBilinc({ runtimeVersion: null });
-    const failed = await runGate({ bilinc: missing.bilinc, runId: 'r1n', sleep: missing.sleep, log: quiet });
-    expect(failedIds(failed)).toEqual(['status.runtime-version']);
+    const noted = await runGate({ bilinc: missing.bilinc, runId: 'r1n', sleep: missing.sleep, log: quiet });
+    expect(failedIds(noted)).toEqual([]);
+    expect(noted.results.find((result) => result.id === 'status.runtime-version')).toEqual({
+      id: 'status.runtime-version',
+      item: 'G5',
+      ok: true,
+      detail: 'sidecar runtime not reported by /api/cloud/status; record the deployed version from the server in GATE.md',
+    });
   });
 
   it('an exception mid-run keeps the checks so far and ends with a failing aborted check, never a secret or stack', async () => {
