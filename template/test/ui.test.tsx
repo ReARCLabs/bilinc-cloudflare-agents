@@ -1,12 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ToolUIPart, UIMessage } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BANNER_TEXT, rejectedByUserOutput, TOKEN_TOO_SHORT_TEXT } from "../src/constants";
+import { parseModels } from "../src/models";
 import { App } from "../src/client/App";
-import { ApprovalCard, NO_PREVIEW_TEXT } from "../src/client/ApprovalCard";
 import { Chat } from "../src/client/Chat";
 import { StatusBanner } from "../src/client/StatusBanner";
-import { ToolCard, type RollbackPreviewResult } from "../src/client/ToolCards";
+import type { RollbackPreviewResult } from "../src/client/steps";
 import {
   NETWORK_ERROR_TEXT,
   SERVER_ERROR_TEXT,
@@ -18,7 +18,9 @@ import {
 } from "../src/client/UnlockScreen";
 
 const hooks = vi.hoisted(() => ({
-  useAgent: vi.fn((options: unknown) => ({ options })),
+  agentState: undefined as unknown,
+  useAgent: vi.fn(),
+  chatOptions: null as null | { body?: () => Record<string, unknown> },
   chat: {
     messages: [] as UIMessage[],
     sendMessage: vi.fn(),
@@ -26,10 +28,16 @@ const hooks = vi.hoisted(() => ({
     connectionError: null as Error | null,
     addToolApprovalResponse: vi.fn(),
     addToolOutput: vi.fn(),
+    stop: vi.fn(),
   },
 }));
 vi.mock("agents/react", () => ({ useAgent: hooks.useAgent }));
-vi.mock("@cloudflare/think/react", () => ({ useAgentChat: () => hooks.chat }));
+vi.mock("@cloudflare/think/react", () => ({
+  useAgentChat: (options: { body?: () => Record<string, unknown> }) => {
+    hooks.chatOptions = options;
+    return hooks.chat;
+  },
+}));
 
 const CHAT = "11111111-2222-4333-8444-555555555555";
 
@@ -58,6 +66,9 @@ beforeEach(() => {
   hooks.chat.messages = [];
   hooks.chat.status = "ready";
   hooks.chat.connectionError = null;
+  hooks.chatOptions = null;
+  hooks.agentState = undefined;
+  hooks.useAgent.mockImplementation((options: unknown) => ({ options, state: hooks.agentState }));
   window.history.replaceState(null, "", `/#chat=${CHAT}`);
 });
 afterEach(() => {
@@ -115,6 +126,19 @@ describe("UnlockScreen", () => {
     expect(url).toBe("/api/unlock");
     expect(JSON.parse(String((init as RequestInit).body))).toEqual({ passphrase: "correct-horse-battery-staple" });
   });
+  it("shows the lockup and shakes the card once after a wrong passphrase", async () => {
+    mockFetch(() => new Response('{"error":"invalid_passphrase"}', { status: 401 }));
+    const { container } = render(<UnlockScreen gate="locked" onUnlocked={stillLocked} />);
+    expect(screen.getByRole("heading", { level: 1, name: "Bilinc Memory" })).toBeTruthy();
+    await submit("wrong-passphrase-0000");
+    await screen.findByText(WRONG_PASSPHRASE_TEXT);
+    const card = container.querySelector(".unlock-card")!;
+    expect(card.classList.contains("shake")).toBe(true);
+    // jsdom has no AnimationEvent, so React listens for the prefixed name there; browsers get "animationend".
+    fireEvent(card, new Event("webkitAnimationEnd", { bubbles: true }));
+    expect(card.classList.contains("shake")).toBe(false);
+  });
+
 
   it("says the passphrase is wrong after a 401", async () => {
     mockFetch(() => new Response('{"error":"invalid_passphrase"}', { status: 401 }));
@@ -238,17 +262,31 @@ describe("App", () => {
   });
 
   it("keeps the chat open when the health re-check after a failed connection answers 500", async () => {
-    let calls = 0;
-    mockFetch(() => (++calls === 1 ? new Response('{"state":"ok"}', { status: 200 }) : new Response("oops", { status: 500 })));
+    let healthCalls = 0;
+    mockFetch((url) => {
+      if (url !== "/api/health") return new Response('{"state":"ok"}', { status: 200 });
+      return ++healthCalls === 1 ? new Response('{"state":"ok"}', { status: 200 }) : new Response("oops", { status: 500 });
+    });
     const { rerender } = render(<App />);
     await waitFor(() => expect(hooks.useAgent).toHaveBeenCalled());
     hooks.chat.connectionError = Object.assign(new Error("closed"), { code: 1006, reason: "", wasClean: false });
     rerender(<App />);
-    await waitFor(() => expect(calls).toBe(2));
+    await waitFor(() => expect(healthCalls).toBe(2));
     await new Promise((r) => setTimeout(r, 0));
     expect(screen.queryByLabelText("Passphrase")).toBeNull();
     expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
   });
+
+  it("loads the model allowlist once unlocked and shows the selector", async () => {
+    const models = {
+      default: "@cf/openai/gpt-oss-120b",
+      models: [{ id: "@cf/openai/gpt-oss-120b", label: "gpt-oss-120b", note: "", tag: "tested", effort: ["low", "medium", "high"] }],
+    };
+    mockFetch((url) => (url === "/api/models" ? new Response(JSON.stringify(models), { status: 200 }) : new Response('{"state":"ok"}', { status: 200 })));
+    render(<App />);
+    expect(await screen.findByRole("button", { name: "Model: gpt-oss-120b, Medium reasoning. Change" })).toBeTruthy();
+  });
+
 
   it("shows the banner and connects to the chat named in the hash", async () => {
     mockFetch(() => new Response('{"state":"key_invalid"}', { status: 200 }));
@@ -335,117 +373,64 @@ describe("App", () => {
   });
 
   it("re-checks health after a failed connection", async () => {
-    mockFetch(() => new Response('{"state":"ok"}', { status: 200 }));
+    let healthCalls = 0;
+    mockFetch((url) => {
+      if (url === "/api/health") healthCalls++;
+      return new Response('{"state":"ok"}', { status: 200 });
+    });
     hooks.chat.connectionError = Object.assign(new Error("closed"), { code: 1006, reason: "", wasClean: false });
     render(<App />);
-    await waitFor(() => expect((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(healthCalls).toBeGreaterThanOrEqual(2));
   });
+
 });
 
-describe("ToolCard", () => {
-  it("renders the preview counts, key lists and truncated note", () => {
-    render(<ToolCard part={previewPart} />);
-    expect(screen.getByText(/1 to change back, 2 to remove/)).toBeTruthy();
-    expect(screen.getByText("favourite-colour")).toBeTruthy();
-    expect(screen.getByText(/cut short/)).toBeTruthy();
-  });
+const MODELS = parseModels(
+  [
+    { id: "@cf/openai/gpt-oss-120b", label: "gpt-oss-120b", note: "", tag: "tested", effort: ["low", "medium", "high"] },
+    { id: "@cf/meta/llama-4-scout-17b-16e-instruct", label: "llama-4-scout", note: "", tag: "tested", effort: null },
+  ],
+  "@cf/openai/gpt-oss-120b",
+);
+const CHECKPOINTS = {
+  state: "ok",
+  now: { total: 1 },
+  checkpoints: [{ id: "snap_1", label: "Before tea change", createdAt: new Date().toISOString(), totalEntries: 1 }],
+};
 
-  it("says how many listed keys were left out (other agents' entries, keys the tools cannot take), and nothing when there are none", () => {
-    render(<ToolCard part={previewPart} />);
-    expect(screen.getByText("Keys not listed (other agents' entries, or keys these tools cannot take): 1.")).toBeTruthy();
-    cleanup();
-    const own = { ...previewPart, output: { ...preview, outsideNamespace: 0 } } as unknown as ToolUIPart;
-    render(<ToolCard part={own} />);
-    expect(screen.queryByText(/Keys not listed/)).toBeNull();
-  });
+function serveCheckpoints(body: unknown = CHECKPOINTS) {
+  const fetchMock = vi.fn(async (_url: string) => new Response(JSON.stringify(body), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
 
-  it("renders the diff counts and keys", () => {
-    const diffPart = {
-      type: "tool-bilinc_diff",
-      toolCallId: "d1",
-      state: "output-available",
-      input: { snapshotId: "snap_1" },
-      output: { snapshotId: "snap_1", counts: { added: 0, modified: 1, removed: 0 }, added: [], modified: ["favourite-colour"], removed: [], truncated: false },
-    } as unknown as ToolUIPart;
-    render(<ToolCard part={diffPart} />);
-    expect(screen.getByText(/0 added, 1 modified, 0 removed/)).toBeTruthy();
-    expect(screen.getByText("favourite-colour")).toBeTruthy();
-  });
-
-  it("says the diff counts are partial when the lists were cut short", () => {
-    const diffPart = {
-      type: "tool-bilinc_diff",
-      toolCallId: "d2",
-      state: "output-available",
-      input: { snapshotId: "snap_1" },
-      output: { snapshotId: "snap_1", counts: { added: 1, modified: 0, removed: 0 }, added: ["a"], modified: [], removed: [], truncated: true, countsComplete: false },
-    } as unknown as ToolUIPart;
-    const { container } = render(<ToolCard part={diffPart} />);
-    expect(container.textContent).not.toMatch(/counts are complete/);
-    expect(screen.getByText(/cut short, so the counts are too/)).toBeTruthy();
-  });
-
-  it("shows a rejection with its reason, and other notices, for forget and rollback", () => {
-    const rejected = { type: "tool-bilinc_rollback", toolCallId: "c2", state: "output-available", input: { previewId: "p-1" }, output: rejectedByUserOutput("keep red") } as unknown as ToolUIPart;
-    render(<ToolCard part={rejected} />);
-    expect(screen.getByText(rejectedByUserOutput("keep red"))).toBeTruthy();
-    cleanup();
-    const notice = { type: "tool-bilinc_forget", toolCallId: "c3", state: "output-available", input: {}, output: "not found" } as unknown as ToolUIPart;
-    render(<ToolCard part={notice} />);
-    expect(screen.getByText("not found")).toBeTruthy();
-  });
-
-  it("shows a notice string as text and ignores other tools", () => {
-    const notice = { ...(previewPart as object), output: "checkpoint not found; call bilinc_checkpoints to list the ids that exist" } as unknown as ToolUIPart;
-    render(<ToolCard part={notice} />);
-    expect(screen.getByText(/checkpoint not found/)).toBeTruthy();
-    cleanup();
-    const other = { type: "tool-search_context", toolCallId: "s", state: "output-available", input: {}, output: "x" } as unknown as ToolUIPart;
-    expect(render(<ToolCard part={other} />).container.textContent).toBe("");
-  });
-});
-
-describe("ApprovalCard", () => {
-  it("offers Approve and Reject for forget", () => {
-    const onApprove = vi.fn();
-    const onReject = vi.fn();
-    render(<ApprovalCard part={forgetPart} onApprove={onApprove} onReject={onReject} />);
-    expect(screen.getByText("old-fact")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
-    expect(onApprove).toHaveBeenCalledOnce();
-    expect(onReject).toHaveBeenCalledWith(undefined);
-  });
-
-  it("shows the preview for a rollback and passes a typed reason on Reject", () => {
-    const onReject = vi.fn();
-    render(<ApprovalCard part={rollbackPart("p-1")} preview={preview} onApprove={() => {}} onReject={onReject} />);
-    expect(screen.getByText(/0 to restore, 1 to change back, 2 to remove/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Reason for rejecting (optional)"), { target: { value: "keep red" } });
-    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
-    expect(onReject).toHaveBeenCalledWith("keep red");
-  });
-
-  it("offers only Reject for a rollback without a matching preview", () => {
-    render(<ApprovalCard part={rollbackPart("unknown")} onApprove={() => {}} onReject={() => {}} />);
-    expect(screen.getByText(NO_PREVIEW_TEXT)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
-  });
-});
+function renderChat() {
+  const props = {
+    chatId: CHAT,
+    models: MODELS,
+    bilincState: "ok" as const,
+    onBilincState: vi.fn(),
+    onNewChat: vi.fn(),
+    onFailure: vi.fn(),
+  };
+  return { ...render(<Chat {...props} />), props };
+}
 
 describe("Chat", () => {
-  it("connects with the chat id and wires approvals to the hooks", () => {
+  it("connects with the chat id and wires Roll back to the approval, naming the checkpoint", async () => {
+    serveCheckpoints();
     hooks.chat.messages = [assistant(previewPart, rollbackPart("p-1"))];
-    render(<Chat chatId={CHAT} onNewChat={() => {}} onFailure={() => {}} />);
+    renderChat();
     expect(hooks.useAgent).toHaveBeenCalledWith({ agent: "BilincAgent", name: CHAT });
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(await screen.findByText("Before tea change")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Roll back" }));
     expect(hooks.chat.addToolApprovalResponse).toHaveBeenCalledWith({ id: "appr-2", approved: true });
   });
 
-  it("sends a plain Reject as a denial and a Reject with a reason as an ordinary tool output, so both continue the chat", () => {
+  it("sends a plain Reject as a denial and a Reject with a reason as an ordinary tool output", () => {
+    serveCheckpoints();
     hooks.chat.messages = [assistant(previewPart, rollbackPart("p-1"))];
-    render(<Chat chatId={CHAT} onNewChat={() => {}} onFailure={() => {}} />);
+    renderChat();
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
     expect(hooks.chat.addToolApprovalResponse).toHaveBeenCalledWith({ id: "appr-2", approved: false });
     fireEvent.change(screen.getByLabelText("Reason for rejecting (optional)"), { target: { value: "keep red" } });
@@ -458,19 +443,124 @@ describe("Chat", () => {
     });
   });
 
-  it("finds no preview when the ids differ, so Approve is not offered", () => {
+  it("offers no Roll back when the preview ids differ", () => {
+    serveCheckpoints();
     hooks.chat.messages = [assistant(previewPart, rollbackPart("p-other"))];
-    render(<Chat chatId={CHAT} onNewChat={() => {}} onFailure={() => {}} />);
-    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    renderChat();
+    expect(screen.queryByRole("button", { name: "Roll back" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeTruthy();
+  });
+
+  it("asks before forgetting, with a Forget button", () => {
+    serveCheckpoints();
+    hooks.chat.messages = [assistant(forgetPart)];
+    renderChat();
+    expect(screen.getByText("old-fact")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Forget" }));
+    expect(hooks.chat.addToolApprovalResponse).toHaveBeenCalledWith({ id: "appr-3", approved: true });
   });
 
   it("calls onNewChat and reports a failed turn", () => {
-    const onNewChat = vi.fn();
-    const onFailure = vi.fn();
+    serveCheckpoints();
     hooks.chat.status = "error";
-    render(<Chat chatId={CHAT} onNewChat={onNewChat} onFailure={onFailure} />);
+    const { props } = renderChat();
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
-    expect(onNewChat).toHaveBeenCalledOnce();
-    expect(onFailure).toHaveBeenCalledOnce();
+    expect(props.onNewChat).toHaveBeenCalledOnce();
+    expect(props.onFailure).toHaveBeenCalledOnce();
+  });
+
+  it("sends the model choice in the chat body and follows the selector", async () => {
+    serveCheckpoints();
+    renderChat();
+    await waitFor(() => expect(hooks.chatOptions?.body?.()).toEqual({ model: "@cf/openai/gpt-oss-120b", effort: "medium" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /llama-4-scout/ }));
+    expect(hooks.chatOptions?.body?.()).toEqual({ model: "@cf/meta/llama-4-scout-17b-16e-instruct", effort: null });
+  });
+
+  it("starts the selector from the chat's stored choice", async () => {
+    serveCheckpoints();
+    hooks.agentState = { model: "@cf/meta/llama-4-scout-17b-16e-instruct", effort: null };
+    renderChat();
+    expect(await screen.findByRole("button", { name: "Model: llama-4-scout. Change" })).toBeTruthy();
+  });
+
+  it("sends with Enter, and stops with Stop while a turn runs", () => {
+    serveCheckpoints();
+    const { unmount } = renderChat();
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "hello" } });
+    fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
+    expect(hooks.chat.sendMessage).toHaveBeenCalledWith({ text: "hello" });
+    unmount();
+    hooks.chat.status = "streaming";
+    renderChat();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(hooks.chat.stop).toHaveBeenCalledOnce();
+  });
+
+  it("refreshes the checkpoints after a turn that ran a bilinc tool", async () => {
+    const fetchMock = serveCheckpoints();
+    hooks.chat.status = "streaming";
+    const { rerender, props } = renderChat();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    hooks.chat.messages = [assistant(previewPart)];
+    hooks.chat.status = "ready";
+    rerender(<Chat {...props} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls.every(([url]) => url === "/api/checkpoints")).toBe(true);
+  });
+
+  it("fills the composer from History without sending, and the memory chip sends nothing", async () => {
+    serveCheckpoints();
+    hooks.chat.messages = [
+      assistant(
+        {
+          type: "tool-search_context",
+          toolCallId: "s1",
+          state: "output-available",
+          input: {},
+          output: "Entries\n<<<entry key=favourite-tea v=v1_5fff2a9 updated=2026-11-24\nThe user's favourite tea is Rooibos.\n>>>",
+        },
+        { type: "text", text: "Your favourite tea is Rooibos." },
+      ),
+    ];
+    renderChat();
+    fireEvent.click(screen.getByRole("button", { name: "favourite-tea · v1_5fff" }));
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Before tea change/ }));
+    const box = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    expect(box.value).toBe('Diff against the checkpoint "Before tea change".');
+    expect(document.activeElement).toBe(box);
+    expect(hooks.chat.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("passes the Bilinc state from /api/checkpoints to the banner", async () => {
+    serveCheckpoints({ state: "unreachable", checkpoints: [], now: null });
+    const { props } = renderChat();
+    await waitFor(() => expect(props.onBilincState).toHaveBeenCalledWith("unreachable"));
+  });
+
+  it("reports a session that ended, from /api/checkpoints", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response('{"error":"unauthorized"}', { status: 401 })));
+    const { props } = renderChat();
+    await waitFor(() => expect(props.onFailure).toHaveBeenCalled());
+  });
+
+  it("switches to the phone layout at 640 px and below", () => {
+    serveCheckpoints();
+    let onChange: (() => void) | undefined;
+    const mql = {
+      matches: true,
+      addEventListener: (_type: string, listener: () => void) => {
+        onChange = listener;
+      },
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal("matchMedia", vi.fn(() => mql));
+    const { container } = renderChat();
+    expect(container.querySelector(".app")?.className).toBe("app is-phone");
+    mql.matches = false;
+    act(() => onChange?.());
+    expect(container.querySelector(".app")?.className).toBe("app");
   });
 });

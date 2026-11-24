@@ -1,32 +1,63 @@
 import { useAgentChat } from "@cloudflare/think/react";
 import { useAgent } from "agents/react";
-import type { ToolUIPart, UIMessage } from "ai";
-import { useEffect, type FormEvent } from "react";
+import type { BilincHealthState } from "bilinc-cloudflare-agents";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { CheckpointsBody } from "../checkpoints";
 import { AGENT_BINDING, rejectedByUserOutput } from "../constants";
-import { ApprovalCard } from "./ApprovalCard";
-import { isRollbackPreview, ToolCard, toolName, type RollbackPreviewResult } from "./ToolCards";
+import type { AgentUiState, ModelsConfig } from "../models";
+import { fetchCheckpoints } from "./api";
+import { ChatScreen, type ChatStatus } from "./ChatScreen";
+import { ranBilincTool } from "./steps";
+import { useToolTiming } from "./timing";
+import { useModelChoice } from "./use-model-choice";
 
-const APPROVAL_TOOLS = new Set(["bilinc_forget", "bilinc_rollback"]);
+/** Every hook of the chat: the agent socket, the model choice, the checkpoints. ChatScreen draws it. */
+export function Chat(p: {
+  chatId: string;
+  models: ModelsConfig | null;
+  bilincState: BilincHealthState | undefined;
+  onBilincState(state: BilincHealthState): void;
+  onNewChat(): void;
+  onFailure(): void;
+}) {
+  const agent = useAgent<AgentUiState>({ agent: AGENT_BINDING, name: p.chatId });
+  const [choice, setChoice] = useModelChoice(p.models, agent.state);
+  const choiceRef = useRef(choice);
+  choiceRef.current = choice;
+  // The body is read on every send, so the request always carries the current choice. The Worker
+  // checks it against MODELS; anything else runs MODEL.
+  const { messages, sendMessage, status, stop, addToolApprovalResponse, addToolOutput, connectionError } = useAgentChat({
+    agent,
+    body: () => (choiceRef.current ? { model: choiceRef.current.model, effort: choiceRef.current.effort } : {}),
+  });
+  const timing = useToolTiming(messages);
+  const [checkpoints, setCheckpoints] = useState<CheckpointsBody | null>(null);
 
-function isToolPart(part: UIMessage["parts"][number]): part is ToolUIPart {
-  return part.type.startsWith("tool-");
-}
-
-/** The bilinc_rollback_preview result in this chat whose previewId matches, if any. */
-export function findPreview(messages: UIMessage[], previewId: unknown): RollbackPreviewResult | undefined {
-  if (typeof previewId !== "string") return undefined;
-  for (const message of messages) {
-    for (const part of message.parts) {
-      if (!isToolPart(part) || toolName(part) !== "bilinc_rollback_preview" || part.state !== "output-available") continue;
-      if (isRollbackPreview(part.output) && part.output.previewId === previewId) return part.output;
+  const callbacks = useRef(p);
+  callbacks.current = p;
+  const refreshCheckpoints = useCallback(async () => {
+    try {
+      const result = await fetchCheckpoints();
+      if (result === "locked") {
+        callbacks.current.onFailure();
+        return;
+      }
+      setCheckpoints(result);
+      callbacks.current.onBilincState(result.state);
+    } catch {
+      // Keep the list already shown; /api/health decides about the banner.
     }
-  }
-  return undefined;
-}
+  }, []);
 
-export function Chat(p: { chatId: string; onNewChat(): void; onFailure(): void }) {
-  const agent = useAgent({ agent: AGENT_BINDING, name: p.chatId });
-  const { messages, sendMessage, status, addToolApprovalResponse, addToolOutput, connectionError } = useAgentChat({ agent });
+  // Once when the chat opens (so the approval step can name the checkpoint), when History opens,
+  // and after each turn that ran a bilinc_* tool. All free reads.
+  useEffect(() => void refreshCheckpoints(), [refreshCheckpoints]);
+  const busy = status === "submitted" || status === "streaming";
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    if (wasBusy.current && !busy && ranBilincTool(messages.at(-1))) void refreshCheckpoints();
+    wasBusy.current = busy;
+  }, [busy, messages, refreshCheckpoints]);
 
   const failed = status === "error" || connectionError !== null;
   useEffect(() => {
@@ -35,71 +66,26 @@ export function Chat(p: { chatId: string; onNewChat(): void; onFailure(): void }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [failed]);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const input = event.currentTarget.elements.namedItem("message") as HTMLInputElement;
-    const text = input.value.trim();
-    if (!text) return;
-    void sendMessage({ text });
-    input.value = "";
-  }
-
-  function renderTool(part: ToolUIPart) {
-    const name = toolName(part);
-    if (part.state === "approval-requested" && APPROVAL_TOOLS.has(name)) {
-      const approvalId = part.approval.id;
-      const input = (part.input ?? {}) as { previewId?: unknown };
-      return (
-        <ApprovalCard
-          key={part.toolCallId}
-          part={part}
-          preview={name === "bilinc_rollback" ? findPreview(messages, input.previewId) : undefined}
-          onApprove={() => void addToolApprovalResponse({ id: approvalId, approved: true })}
-          onReject={(reason) =>
-            reason
-              ? addToolOutput({ toolCallId: part.toolCallId, toolName: name, output: rejectedByUserOutput(reason) })
-              : void addToolApprovalResponse({ id: approvalId, approved: false })
-          }
-        />
-      );
-    }
-    return <ToolCard part={part} />;
-  }
-
   return (
-    <section className="chat">
-      <header>
-        <h1>Bilinc agent</h1>
-        <button type="button" onClick={p.onNewChat}>
-          New chat
-        </button>
-      </header>
-      <ol className="messages">
-        {messages.map((message) => (
-          <li key={message.id} className={`message ${message.role}`}>
-            {message.parts.map((part, i) => {
-              if (part.type === "text") return <p key={i}>{part.text}</p>;
-              if (isToolPart(part)) {
-                return (
-                  <div key={part.toolCallId} className="tool">
-                    <span className="tool-name">
-                      {toolName(part)} · {part.state}
-                    </span>
-                    {renderTool(part)}
-                  </div>
-                );
-              }
-              return null;
-            })}
-          </li>
-        ))}
-      </ol>
-      <form onSubmit={submit}>
-        <input name="message" placeholder="Message" autoComplete="off" />
-        <button type="submit" disabled={status === "submitted" || status === "streaming"}>
-          Send
-        </button>
-      </form>
-    </section>
+    <ChatScreen
+      messages={messages}
+      status={status as ChatStatus}
+      bilincState={p.bilincState}
+      checkpoints={checkpoints}
+      models={p.models}
+      choice={choice}
+      timing={timing}
+      onChoice={setChoice}
+      onSend={(text) => void sendMessage({ text })}
+      onStop={() => void stop()}
+      onApprove={(id) => void addToolApprovalResponse({ id, approved: true })}
+      onReject={(target, reason) =>
+        reason
+          ? addToolOutput({ toolCallId: target.toolCallId, toolName: target.tool, output: rejectedByUserOutput(reason) })
+          : void addToolApprovalResponse({ id: target.approvalId, approved: false })
+      }
+      onOpenHistory={() => void refreshCheckpoints()}
+      onNewChat={p.onNewChat}
+    />
   );
 }

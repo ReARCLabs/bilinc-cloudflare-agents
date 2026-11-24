@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { MIN_ACCESS_TOKEN_LENGTH, TOKEN_TOO_SHORT_TEXT } from "../constants";
 import { unlock, type GateState, type HealthCheck } from "./api";
+import { Lockup } from "./brand";
 
 export const WRONG_PASSPHRASE_TEXT = "That passphrase is not right.";
 export const NETWORK_ERROR_TEXT = "Could not reach the agent. Check your connection and try again.";
@@ -23,6 +24,7 @@ export function UnlockScreen(p: { gate: GateState; retryAfterSeconds?: number; o
   const [serverError, setServerError] = useState(false);
   const [afterUnlock, setAfterUnlock] = useState<AfterUnlock>(null);
   const [busy, setBusy] = useState(false);
+  const [shaking, setShaking] = useState(false);
 
   // The parent's gate can change while this screen stays mounted (a later health check); follow it.
   useEffect(() => setGate(p.gate), [p.gate]);
@@ -50,7 +52,9 @@ export function UnlockScreen(p: { gate: GateState; retryAfterSeconds?: number; o
       setGate(result.gate);
       setRetryAfter(result.retryAfterSeconds);
       setServerError(result.serverError === true);
-      setWrong(result.gate === "locked" && result.serverError !== true);
+      const wrongNow = result.gate === "locked" && result.serverError !== true;
+      setWrong(wrongNow);
+      if (wrongNow) setShaking(true);
       // After a server error the passphrase may well be right, so it stays for the retry.
       if (result.serverError !== true) input.value = "";
     } catch {
@@ -63,29 +67,33 @@ export function UnlockScreen(p: { gate: GateState; retryAfterSeconds?: number; o
   if (gate === "token_too_short") {
     return (
       <main className="unlock">
-        <h1>Bilinc agent</h1>
-        <p className="error">{TOKEN_TOO_SHORT_TEXT}</p>
+        <div className="unlock-card">
+          <Lockup as="h1" />
+          <p className="error">{TOKEN_TOO_SHORT_TEXT}</p>
+        </div>
       </main>
     );
   }
 
   return (
     <main className="unlock">
-      <h1>Bilinc agent</h1>
-      <p>Enter the access passphrase chosen when this agent was deployed.</p>
-      <form onSubmit={submit}>
-        <label htmlFor="passphrase">Passphrase</label>
-        <input id="passphrase" name="passphrase" type="password" autoComplete="current-password" minLength={MIN_ACCESS_TOKEN_LENGTH} required />
-        <button type="submit" disabled={busy}>
-          Unlock
-        </button>
-      </form>
-      {afterUnlock === "no_session" && <p className="error">{UNLOCKED_NO_SESSION_TEXT}</p>}
-      {afterUnlock === "check_failed" && <p className="error">{UNLOCKED_CHECK_FAILED_TEXT}</p>}
-      {networkError && <p className="error">{NETWORK_ERROR_TEXT}</p>}
-      {!networkError && serverError && <p className="error">{SERVER_ERROR_TEXT}</p>}
-      {!networkError && gate === "too_many_attempts" && <p className="error">{tooManyAttemptsText(retryAfter)}</p>}
-      {!networkError && gate !== "too_many_attempts" && wrong && <p className="error">{WRONG_PASSPHRASE_TEXT}</p>}
+      <div className={shaking ? "unlock-card shake" : "unlock-card"} onAnimationEnd={() => setShaking(false)}>
+        <Lockup as="h1" />
+        <p>Enter the access passphrase chosen when this agent was deployed.</p>
+        <form onSubmit={submit}>
+          <label htmlFor="passphrase">Passphrase</label>
+          <input id="passphrase" name="passphrase" type="password" autoComplete="current-password" minLength={MIN_ACCESS_TOKEN_LENGTH} required />
+          <button type="submit" disabled={busy}>
+            Unlock
+          </button>
+        </form>
+        {afterUnlock === "no_session" && <p className="error">{UNLOCKED_NO_SESSION_TEXT}</p>}
+        {afterUnlock === "check_failed" && <p className="error">{UNLOCKED_CHECK_FAILED_TEXT}</p>}
+        {networkError && <p className="error">{NETWORK_ERROR_TEXT}</p>}
+        {!networkError && serverError && <p className="error">{SERVER_ERROR_TEXT}</p>}
+        {!networkError && gate === "too_many_attempts" && <p className="error">{tooManyAttemptsText(retryAfter)}</p>}
+        {!networkError && gate !== "too_many_attempts" && wrong && <p className="error">{WRONG_PASSPHRASE_TEXT}</p>}
+      </div>
     </main>
   );
 }

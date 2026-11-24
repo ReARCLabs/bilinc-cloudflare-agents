@@ -1,8 +1,10 @@
 import type { BilincHealthState } from "bilinc-cloudflare-agents";
 import { useCallback, useEffect, useState } from "react";
-import { fetchHealth, type GateState, type HealthCheck } from "./api";
+import type { ModelsConfig } from "../models";
+import { fetchHealth, fetchModels, type GateState, type HealthCheck } from "./api";
 import { Chat } from "./Chat";
 import { useChatId } from "./chat-id";
+import { Header } from "./Header";
 import { StatusBanner } from "./StatusBanner";
 import { UnlockScreen } from "./UnlockScreen";
 
@@ -10,6 +12,7 @@ type Health = { gate: GateState; state?: BilincHealthState };
 
 export function App() {
   const [health, setHealth] = useState<Health | null>(null);
+  const [models, setModels] = useState<ModelsConfig | null>(null);
   const { chatId, startNewChat } = useChatId();
 
   // Called on load, after unlocking, after a failed turn and after a failed connection; never on a timer.
@@ -20,6 +23,11 @@ export function App() {
     try {
       const next = await fetchHealth();
       setHealth(next);
+      if (next.gate === "unlocked") {
+        void fetchModels().then((config) => {
+          if (config) setModels(config);
+        });
+      }
       return next.gate;
     } catch {
       setHealth((prev) => prev ?? { gate: "locked" });
@@ -28,12 +36,30 @@ export function App() {
   }, []);
   useEffect(() => void refresh(), [refresh]);
 
-  if (health === null) return <p className="loading">Loading…</p>;
+  // /api/checkpoints answers with the same states as /api/health; its newer answer moves the banner.
+  const onBilincState = useCallback(
+    (state: BilincHealthState) => setHealth((prev) => (prev && prev.state !== state ? { ...prev, state } : prev)),
+    [],
+  );
+  const onFailure = useCallback(() => void refresh(), [refresh]);
+
+  if (health === null) {
+    return (
+      <p className="loading" role="status">
+        Loading…
+      </p>
+    );
+  }
   if (health.gate !== "unlocked") return <UnlockScreen gate={health.gate} onUnlocked={refresh} />;
+  if (health.state === "namespace_invalid") {
+    return (
+      <div className="app">
+        <Header onNewChat={startNewChat} />
+        <StatusBanner state={health.state} />
+      </div>
+    );
+  }
   return (
-    <>
-      <StatusBanner state={health.state} />
-      {health.state !== "namespace_invalid" && <Chat key={chatId} chatId={chatId} onNewChat={startNewChat} onFailure={() => void refresh()} />}
-    </>
+    <Chat key={chatId} chatId={chatId} models={models} bilincState={health.state} onBilincState={onBilincState} onNewChat={startNewChat} onFailure={onFailure} />
   );
 }
