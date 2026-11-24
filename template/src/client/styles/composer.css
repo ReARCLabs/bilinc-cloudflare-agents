@@ -114,3 +114,7 @@
 .is-phone .mpanel { position: fixed; left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
 .is-phone .mrow small { max-width: none; }
 .is-phone .mname { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* At 390 px the footer must fit Memory, the model button and Ask/Stop: the bars alone show the effort. */
+.is-phone .foot { gap: 6px; }
+.is-phone .mtrig { gap: 6px; padding: 0 6px; }
+.is-phone .elab { display: none; }
