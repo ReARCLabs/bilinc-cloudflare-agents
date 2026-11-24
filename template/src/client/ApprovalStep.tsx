@@ -63,8 +63,9 @@ export function ApprovalStep(p: {
             <p className="appr-note">{`Whole project: ${previewCounts(p.preview)}.`}</p>
             <PreviewKeys preview={p.preview} />
             {(p.preview.outsideNamespace ?? 0) > 0 && (
-              <p className="appr-note">{`Keys not listed (other agents' entries, or keys these tools cannot take): ${p.preview.outsideNamespace}.`}</p>
+              <p className="appr-note">{`Keys not listed (other agents' entries, or keys these tools cannot take): ${p.preview.truncated ? "at least " : ""}${p.preview.outsideNamespace}.`}</p>
             )}
+            {/* Bilinc's counts cover the whole project even when the lists are cut short (src/tools.ts bilinc_rollback_preview). */}
             {p.preview.truncated && <p className="appr-note">The lists are cut short; the counts are complete.</p>}
           </>
         ) : (

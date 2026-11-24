@@ -324,7 +324,8 @@ describe("ApprovalStep", () => {
     expect(screen.getByText(/Roll back the whole Bilinc project to/).textContent).toBe(
       "Roll back the whole Bilinc project to Before tea change? Other chats are included.",
     );
-    expect(screen.getByText("Keys not listed (other agents' entries, or keys these tools cannot take): 1.")).toBeTruthy();
+    // The preview is cut short, so the left-out keys were counted only among the listed ones.
+    expect(screen.getByText("Keys not listed (other agents' entries, or keys these tools cannot take): at least 1.")).toBeTruthy();
     expect(screen.getByText("The lists are cut short; the counts are complete.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Roll back" }));
     expect(onApprove).toHaveBeenCalledOnce();
@@ -340,6 +341,11 @@ describe("ApprovalStep", () => {
       ["Removed", ["a", "b"]],
     ]);
     expect(document.querySelector(".appr-keys .tone-removed")).toBeTruthy();
+  });
+
+  it("gives the exact number of keys not listed when the lists are complete", () => {
+    render(<ApprovalStep info={rollbackInfo} preview={{ ...preview, truncated: false, outsideNamespace: 2 }} onApprove={() => {}} onReject={() => {}} />);
+    expect(screen.getByText("Keys not listed (other agents' entries, or keys these tools cannot take): 2.")).toBeTruthy();
   });
 
   it("says when the rollback changes nothing and lists no empty kinds", () => {
