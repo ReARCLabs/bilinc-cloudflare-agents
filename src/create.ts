@@ -2,7 +2,6 @@ import type { ContextConfig } from "agents/context";
 import { createClient } from "./client";
 import type { BilincClient, BilincProfile } from "./client";
 import {
-  BREAKER_OPEN,
   DEFAULT_BASE_URL,
   DEFAULT_LIMIT,
   DEFAULT_MAX_CHARS,
@@ -67,11 +66,10 @@ export function createBilinc(options: BilincOptions): Bilinc {
   const baseUrl = httpsBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL);
   if (!baseUrl) throw new Error(BASE_URL_ERROR);
 
-  const guard = new Guard();
   const client = createClient({
     apiKey: typeof options.apiKey === "string" ? options.apiKey.trim() : "",
     baseUrl,
-    guard,
+    guard: new Guard(),
     onError: options.onError ?? defaultOnError,
   });
   const prefix = KEY_PREFIX(namespace);
@@ -86,11 +84,9 @@ export function createBilinc(options: BilincOptions): Bilinc {
     maxChars: positiveInteger(options.maxChars, DEFAULT_MAX_CHARS),
   };
 
-  const bilinc: Bilinc = {
+  return {
     client,
     prefix,
     memoryBlock: (overrides) => createMemoryBlock(context, overrides),
   };
-  Object.defineProperty(bilinc, BREAKER_OPEN, { value: () => guard.state().open });
-  return bilinc;
 }

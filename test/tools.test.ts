@@ -305,18 +305,6 @@ describe("bilinc_forget", () => {
     expect(onMemoryChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("an outcome-unknown forget that opens the breaker does not refresh, so the prompt keeps its key list instead of the static line", async () => {
-    const onMemoryChanged = vi.fn(() => Promise.resolve());
-    const unknown = apiError(503, "mutation_outcome_unknown");
-    const m = mockFetch(unknown, unknown, unknown);
-    const { tools } = setup(onMemoryChanged);
-    for (const key of ["a", "b", "c"]) {
-      expect(await run(tools, "bilinc_forget", { key, reason: "r" })).toBe("outcome unknown; check history before trying again");
-    }
-    expect(m.sent).toHaveLength(3);
-    expect(onMemoryChanged).toHaveBeenCalledTimes(2);
-  });
-
   it("removed: false returns 'not found' and does not refresh", async () => {
     const onMemoryChanged = vi.fn(() => Promise.resolve());
     mockFetch(ok({ key: "cf.default.gone", removed: false }));
@@ -522,16 +510,6 @@ describe("bilinc_rollback", () => {
     expect(await run(tools, "bilinc_rollback", { previewId })).toBe("outcome unknown; check history before trying again");
     expect(map.size).toBe(0);
     expect(onMemoryChanged).toHaveBeenCalledTimes(1);
-  });
-
-  it("an outcome-unknown rollback that opens the breaker does not refresh, so the prompt keeps its key list instead of the static line", async () => {
-    const unknown = apiError(503, "mutation_outcome_unknown");
-    const { tools, sent, previewId, onMemoryChanged } = await previewThen(unknown, unknown, unknown);
-    expect(await run(tools, "bilinc_checkpoint", { label: "one" })).toBe("outcome unknown; check history before trying again");
-    expect(await run(tools, "bilinc_checkpoint", { label: "two" })).toBe("outcome unknown; check history before trying again");
-    expect(await run(tools, "bilinc_rollback", { previewId })).toBe("outcome unknown; check history before trying again");
-    expect(sent).toHaveLength(4);
-    expect(onMemoryChanged).not.toHaveBeenCalled();
   });
 
   it("a never-sent attempt (circuit open) keeps the preview", async () => {
