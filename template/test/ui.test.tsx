@@ -469,10 +469,25 @@ describe("Chat", () => {
     expect(props.onFailure).toHaveBeenCalledOnce();
   });
 
-  it("sends the model choice in the chat body and follows the selector", async () => {
+  it("sends no model before the chat's state arrives, then the stored choice", async () => {
     serveCheckpoints();
+    const { rerender, props } = renderChat();
+    await screen.findByRole("button", { name: /^Model:/ });
+    expect(hooks.chatOptions?.body?.()).toEqual({});
+    hooks.agentState = { model: "@cf/openai/gpt-oss-120b", effort: "high" };
+    rerender(<Chat {...props} />);
+    await waitFor(() => expect(hooks.chatOptions?.body?.()).toEqual({ model: "@cf/openai/gpt-oss-120b", effort: "high" }));
+  });
+
+  it("sends the model choice in the chat body once the state arrived, and follows the selector before it", async () => {
+    serveCheckpoints();
+    hooks.agentState = { model: null, effort: null };
     renderChat();
     await waitFor(() => expect(hooks.chatOptions?.body?.()).toEqual({ model: "@cf/openai/gpt-oss-120b", effort: "medium" }));
+    cleanup();
+    hooks.agentState = undefined;
+    renderChat();
+    expect(hooks.chatOptions?.body?.()).toEqual({});
     fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
     fireEvent.click(screen.getByRole("radio", { name: /llama-4-scout/ }));
     expect(hooks.chatOptions?.body?.()).toEqual({ model: "@cf/meta/llama-4-scout-17b-16e-instruct", effort: null });

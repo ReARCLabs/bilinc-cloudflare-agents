@@ -21,11 +21,12 @@ export function Chat(p: {
   onFailure(): void;
 }) {
   const agent = useAgent<AgentUiState>({ agent: AGENT_BINDING, name: p.chatId });
-  const [choice, setChoice] = useModelChoice(p.models, agent.state);
+  const [choice, setChoice, sendable] = useModelChoice(p.models, agent.state);
   const choiceRef = useRef(choice);
-  choiceRef.current = choice;
+  choiceRef.current = sendable ? choice : null;
   // The body is read on every send, so the request always carries the current choice. The Worker
-  // checks it against MODELS; anything else runs MODEL.
+  // checks it against MODELS; anything else runs MODEL. Before the agent state arrives (and the
+  // user has not picked) it sends {}, so the Worker keeps the chat's stored choice.
   const { messages, sendMessage, status, stop, addToolApprovalResponse, addToolOutput, connectionError } = useAgentChat({
     agent,
     body: () => (choiceRef.current ? { model: choiceRef.current.model, effort: choiceRef.current.effort } : {}),
