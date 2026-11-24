@@ -24,6 +24,8 @@ interface Shot {
   state: string;
   act?: (page: Page) => Promise<void>;
   reducedMotion?: boolean;
+  /** Selector of a panel the act opens; the screenshot waits until it has finished fading in. */
+  panel?: string;
 }
 
 const SHOTS: Shot[] = [
@@ -44,9 +46,9 @@ const SHOTS: Shot[] = [
   { name: "turn-done", state: "turn-done" },
   { name: "error-step", state: "error-step" },
   { name: "banner", state: "banner" },
-  { name: "history-open", state: "turn-done", act: (page) => page.getByRole("button", { name: "History" }).click() },
-  { name: "memory-menu-open", state: "empty", act: (page) => page.getByRole("button", { name: "Memory" }).click() },
-  { name: "model-panel-open", state: "empty", act: (page) => page.getByRole("button", { name: /^Model:/ }).click() },
+  { name: "history-open", state: "turn-done", act: (page) => page.getByRole("button", { name: "History" }).click(), panel: ".history-panel" },
+  { name: "memory-menu-open", state: "empty", act: (page) => page.getByRole("button", { name: "Memory" }).click(), panel: ".menu" },
+  { name: "model-panel-open", state: "empty", act: (page) => page.getByRole("button", { name: /^Model:/ }).click(), panel: ".mpanel" },
   { name: "reduced-motion", state: "approval-waiting", reducedMotion: true },
 ];
 
@@ -54,6 +56,22 @@ async function open(page: Page, state: string, reducedMotion = false): Promise<v
   await page.emulateMedia({ reducedMotion: reducedMotion ? "reduce" : "no-preference" });
   await page.goto(`/fixtures.html?state=${state}`);
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
+}
+
+/** Waits for the panel's own animations to end and its computed opacity (and its ancestors') to reach 1. */
+async function panelSettled(page: Page, selector: string): Promise<void> {
+  const panel = page.locator(selector).first();
+  await expect(panel).toBeVisible();
+  await panel.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished)).then(() => undefined));
+  await expect
+    .poll(() =>
+      panel.evaluate((el) => {
+        let opacity = 1;
+        for (let n: Element | null = el; n; n = n.parentElement) opacity *= Number(getComputedStyle(n).opacity);
+        return opacity;
+      }),
+    )
+    .toBe(1);
 }
 
 async function seriousViolations(page: Page): Promise<string[]> {
@@ -70,6 +88,7 @@ for (const size of WIDTHS) {
       test(shot.name, async ({ page }) => {
         await open(page, shot.state, shot.reducedMotion);
         if (shot.act) await shot.act(page);
+        if (shot.panel) await panelSettled(page, shot.panel);
         await page.screenshot({ path: join(OUT, `${shot.name}-${size.name}.png`) });
         expect(await seriousViolations(page)).toEqual([]);
         if (shot.reducedMotion) {
