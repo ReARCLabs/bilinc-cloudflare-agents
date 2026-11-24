@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BilincClient, DiffResult, RollbackPreview } from '../src/index';
-import { installShapeRecorder, readStatusUsage, runGate, secretSamples, writeReport } from '../scripts/gate.mjs';
+import { installShapeRecorder, readStatusUsage, runGate, secretSamples, writeReport, type GateReport } from '../scripts/gate.mjs';
 
 class FakeBilincError extends Error {
   readonly code: string;
@@ -241,7 +241,7 @@ describe('runGate against a fake Bilinc', () => {
     );
   });
 
-  it('records the sidecar version when status reports one, and notes it when status does not', async () => {
+  it('records the sidecar version as a check when status reports one, and only as a note when status does not', async () => {
     const fake = fakeBilinc();
     const report = await runGate({ bilinc: fake.bilinc, runId: 'r1v', sleep: fake.sleep, log: quiet });
     expect(report.results.find((result) => result.id === 'status.runtime-version')).toEqual({
@@ -250,16 +250,41 @@ describe('runGate against a fake Bilinc', () => {
       ok: true,
       detail: 'sidecar runtime 2.7.3',
     });
+    expect(report.notes.some((note) => note.id === 'status.runtime-version')).toBe(false);
     // Live /api/cloud/status reports only runtime: "ready" | "unavailable", never a version (bilinc-site app/api/cloud/status/route.ts).
     const missing = fakeBilinc({ runtimeVersion: null });
-    const noted = await runGate({ bilinc: missing.bilinc, runId: 'r1n', sleep: missing.sleep, log: quiet });
+    const lines: string[] = [];
+    const noted = await runGate({ bilinc: missing.bilinc, runId: 'r1n', sleep: missing.sleep, log: (line) => lines.push(line) });
     expect(failedIds(noted)).toEqual([]);
-    expect(noted.results.find((result) => result.id === 'status.runtime-version')).toEqual({
+    expect(noted.results.some((result) => result.id === 'status.runtime-version')).toBe(false);
+    const note = {
       id: 'status.runtime-version',
       item: 'G5',
-      ok: true,
       detail: 'sidecar runtime not reported by /api/cloud/status; record the deployed version from the server in GATE.md',
+    };
+    expect(noted.notes).toContainEqual(note);
+    expect(lines).toContain(`NOTE G5 status.runtime-version (${note.detail})`);
+  });
+
+  it('records the credit mode in the report and the log, not as a check', async () => {
+    const metered = fakeBilinc();
+    const meteredLines: string[] = [];
+    const meteredReport = await runGate({ bilinc: metered.bilinc, runId: 'r1m', sleep: metered.sleep, log: (line) => meteredLines.push(line) });
+    expect(meteredReport.mode).toBe('metered');
+    expect(meteredReport.notes).toContainEqual({ id: 'credits.mode', item: 'G10', detail: 'metered: each call is measured by the balance delta' });
+    expect(meteredLines).toContain('NOTE G10 credits.mode (metered: each call is measured by the balance delta)');
+    expect(meteredReport.results.some((result) => result.id === 'credits.mode' || result.id === 'credits.unmetered')).toBe(false);
+
+    const unmetered = fakeBilinc({ unmetered: true });
+    const report = await runGate({ bilinc: unmetered.bilinc, runId: 'r1u', sleep: unmetered.sleep, log: quiet, readUsage: unmetered.readUsage });
+    expect(failedIds(report)).toEqual([]);
+    expect(report.mode).toBe('unmetered');
+    expect(report.notes).toContainEqual({
+      id: 'credits.mode',
+      item: 'G10',
+      detail: 'unmetered: the plan has no credit balance, so per-call costs were not measured by balance delta',
     });
+    expect(report.results.some((result) => result.id === 'credits.mode' || result.id === 'credits.unmetered')).toBe(false);
   });
 
   it('an exception mid-run keeps the checks so far and ends with a failing aborted check, never a secret or stack', async () => {
@@ -313,7 +338,12 @@ describe('runGate against a fake Bilinc', () => {
   it('refuses a project that already holds entries, before any write', async () => {
     const fake = fakeBilinc({ startEntries: 2 });
     const report = await runGate({ bilinc: fake.bilinc, runId: 'r5', sleep: fake.sleep, log: quiet });
-    expect(report).toEqual({ ok: false, results: [{ id: 'project.empty', item: 'gate', ok: false, detail: '2 entries in the project' }] });
+    expect(report).toEqual({
+      ok: false,
+      mode: undefined,
+      notes: [],
+      results: [{ id: 'project.empty', item: 'gate', ok: false, detail: '2 entries in the project' }],
+    });
   });
 
   it('passes a second run on the same account, counting the first run\'s checkpoint', async () => {
@@ -489,12 +519,7 @@ describe('runGate against a fake Bilinc', () => {
     });
     expect(failedIds(report)).toEqual([]);
     expect(report.ok).toBe(true);
-    expect(report.results.find((result) => result.id === 'credits.unmetered')).toEqual({
-      id: 'credits.unmetered',
-      item: 'G10',
-      ok: true,
-      detail: 'plan has no credit balance (unmetered); per-call costs were not measured by balance delta',
-    });
+    expect(report.mode).toBe('unmetered');
     expect(report.results.find((result) => result.id === 'credits.unit-costs')).toMatchObject({
       id: 'credits.unit-costs',
       item: 'G10',
@@ -503,7 +528,8 @@ describe('runGate against a fake Bilinc', () => {
     expect(report.results.find((result) => result.id === 'credits.unit-costs')?.detail).toContain(
       'memory_write=1 recall=1 snapshot=2 rollback=2',
     );
-    // Four commits and forget are memory writes (the refused secret_detected commit is not); one recall, checkpoint and rollback.
+    // Five commits (with the expiry setup) and forget are memory writes, the refused secret_detected commit is not;
+    // one recall, one checkpoint, one rollback execution.
     expect(report.results.find((result) => result.id === 'credits.usage-lower-bound')).toEqual({
       id: 'credits.usage-lower-bound',
       item: 'G10',
@@ -515,7 +541,6 @@ describe('runGate against a fake Bilinc', () => {
     });
     // No per-call balance checks and no total: only the unmetered checks carry the credits. prefix.
     expect(report.results.map((result) => result.id).filter((id) => id.startsWith('credits.'))).toEqual([
-      'credits.unmetered',
       'credits.unit-costs',
       'credits.usage-lower-bound',
     ]);
@@ -583,9 +608,10 @@ describe('runGate against a fake Bilinc', () => {
   });
 
   /** Stopped right after credits.mode failed: nothing written, no checkpoint, nothing spent. */
-  const expectStoppedBeforeSpending = async (fake: ReturnType<typeof fakeBilinc>, report: { results: { id: string; ok: boolean }[] }) => {
+  const expectStoppedBeforeSpending = async (fake: ReturnType<typeof fakeBilinc>, report: GateReport) => {
     expect(failedIds(report)).toEqual(['credits.mode']);
     expect(report.results.map((result) => result.id)).toEqual(['project.empty', 'credits.mode']);
+    expect(report.mode).toBeUndefined();
     expect((await fake.bilinc.client.list({})).total).toBe(0);
     expect(await fake.bilinc.client.listSnapshots({ limit: 100 })).toEqual([]);
   };
@@ -649,12 +675,15 @@ describe('runGate against a fake Bilinc', () => {
     expect(calls.filter((cost) => !/^(null|'(memory_write|recall|snapshot|rollback)')$/.test(cost ?? ''))).toEqual([]);
   });
 
-  it('logs one PASS or FAIL line per check', async () => {
-    const fake = fakeBilinc();
-    const lines: string[] = [];
-    const report = await runGate({ bilinc: fake.bilinc, runId: 'r6', sleep: fake.sleep, log: (line) => lines.push(line) });
-    expect(lines).toHaveLength(report.results.length);
-    expect(lines.every((line) => /^(PASS|FAIL) \S+ \S+ \(.*\)$/.test(line))).toBe(true);
+  it('logs one PASS or FAIL line per check and one NOTE line per note', async () => {
+    for (const runtimeVersion of ['2.7.3', null]) {
+      const fake = fakeBilinc({ runtimeVersion });
+      const lines: string[] = [];
+      const report = await runGate({ bilinc: fake.bilinc, runId: 'r6', sleep: fake.sleep, log: (line) => lines.push(line) });
+      expect(lines.filter((line) => /^(PASS|FAIL) \S+ \S+ \(.*\)$/.test(line))).toHaveLength(report.results.length);
+      expect(lines.filter((line) => /^NOTE \S+ \S+ \(.*\)$/.test(line))).toHaveLength(report.notes.length);
+      expect(lines).toHaveLength(report.results.length + report.notes.length);
+    }
   });
 });
 

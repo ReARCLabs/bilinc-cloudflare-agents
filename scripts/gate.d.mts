@@ -16,8 +16,18 @@ export interface GateCheck {
   detail: string;
 }
 
+/** Informational: logged as a NOTE line and kept in the report, never a check, so it cannot pass or fail the run. */
+export interface GateNote {
+  id: string;
+  item: string;
+  detail: string;
+}
+
 export interface GateReport {
   ok: boolean;
+  /** How credits were checked; undefined when the run stopped before the status read decided it. */
+  mode: 'metered' | 'unmetered' | undefined;
+  notes: GateNote[];
   results: GateCheck[];
 }
 
@@ -51,9 +61,10 @@ export declare function readStatusUsage(options: {
 }): Promise<{ credits: unknown; usage: unknown }>;
 /**
  * On an unmetered plan (the raw status body has credits.availableTotalCredits: null) calls are not measured by balance delta:
- * credits.unmetered, credits.unit-costs (status usage[].creditsEach against DOCUMENTED_UNIT_COSTS) and credits.usage-lower-bound
+ * credits.unit-costs (status usage[].creditsEach against DOCUMENTED_UNIT_COSTS) and credits.usage-lower-bound
  * (usage[].used grew by at least this run's billed calls per event type; a lower bound only, as usage is per organisation) are recorded instead.
  * Any other non-number balance, or no credits at all, fails credits.mode and stops the run before it spends anything.
+ * The decided mode is report.mode plus a credits.mode note; a sidecar version that status does not report is a note, not a check.
  */
 export declare function runGate(options: {
   bilinc: { client: BilincClient; prefix: string };

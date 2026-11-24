@@ -1,14 +1,16 @@
 /* global AbortSignal, console, fetch, process, setTimeout */
 // Pre-publish gate for bilinc-cloudflare-agents (spec: "Unverified > Checked at the pre-publish gate": G5, G6, G7, G10).
-// G5 includes the deployed sidecar version: status.runtime-version prints it when /api/cloud/status reports one; today it does not, so GATE.md records the version read on the server.
+// G5 includes the deployed sidecar version: status.runtime-version checks it when /api/cloud/status reports one; today it does not,
+// so it is only a note in the report (notes) and GATE.md records the version read on the server.
 // Runs every BilincClient call against production Bilinc with a key from a DEDICATED test account.
 // It spends about 11 credits on that account and runs a project-wide rollback, so it refuses a project that already holds entries,
 // or a checkpoint that an earlier gate run did not make. A run that ends early forgets the keys it wrote (best effort).
-// Metered and unmetered plans are both supported. The status read at the start of the run decides which:
+// Metered and unmetered plans are both supported. The status read at the start of the run decides which; the report's mode
+// field and a NOTE log line record it (it is not a check):
 // - metered (a numeric credits.availableTotalCredits, e.g. the Free plan): each call's cost is measured by the balance delta
 //   (credits.<call> checks) and the run's total by credits.total;
 // - unmetered (the raw status body has credits.availableTotalCredits: null): calls are not measured by balance delta, and no
-//   credits.<call> or credits.total check is made. credits.unmetered records the mode, and credits.unit-costs compares status
+//   credits.<call> or credits.total check is made. credits.unit-costs compares status
 //   usage[].creditsEach with the documented unit costs. Usage counters are per organisation, so other projects can only add to
 //   them: credits.usage-lower-bound checks that each documented event type's usage[].used grew by at least this run's billed
 //   calls of that type, and says that upper bounds and "free calls stay free" cannot be verified this way.
@@ -219,6 +221,14 @@ export async function runGate({
     results.push({ id, item, ok, detail });
     log(`${ok ? 'PASS' : 'FAIL'} ${item} ${id} (${detail})`);
   };
+  // Informational: written to the report's notes and the log, never a check, so it can neither pass nor fail the run.
+  const notes = [];
+  const note = (id, item, detail) => {
+    notes.push({ id, item, detail });
+    log(`NOTE ${item} ${id} (${detail})`);
+  };
+  // 'metered' | 'unmetered', set once the status read at the start decides it; undefined when the run stops before that.
+  let mode;
   // Keys this run may have written. A key leaves the set once the run's own rollback or forget removed it;
   // whatever is left when the run ends (an early return, a throw, a failed rollback or forget) is forgotten by cleanUp().
   const leftover = new Set();
@@ -250,7 +260,7 @@ export async function runGate({
   // Every exit goes through finish(), so cleanup runs before ok is computed.
   const finish = async () => {
     await cleanUp();
-    return { ok: results.every((result) => result.ok), results };
+    return { ok: results.every((result) => result.ok), mode, notes, results };
   };
   const expectError = (id, item, error, code, status) => {
     const ok =
@@ -304,6 +314,10 @@ export async function runGate({
     // the client maps a missing or non-number balance to null too, so the run stops on anything else before it spends.
     unmetered = typeof status.credits?.availableTotalCredits !== 'number';
     const startCredits = unmetered ? undefined : await credits();
+    if (!unmetered) {
+      mode = 'metered';
+      note('credits.mode', 'G10', 'metered: each call is measured by the balance delta');
+    }
     if (unmetered) {
       const stop = 'only credits.availableTotalCredits: null marks an unmetered plan, so the run stopped before spending anything';
       if (status.credits === null) {
@@ -326,7 +340,8 @@ export async function runGate({
         check('credits.mode', 'G10', false, `${reason}; ${stop}`);
         return finish();
       }
-      check('credits.unmetered', 'G10', true, 'plan has no credit balance (unmetered); per-call costs were not measured by balance delta');
+      mode = 'unmetered';
+      note('credits.mode', 'G10', 'unmetered: the plan has no credit balance, so per-call costs were not measured by balance delta');
       startUsage = raw.usage;
       const costs = unitCosts(startUsage);
       const list = (pairs) => pairs.map(([eventType, each]) => `${eventType}=${each}`).join(' ');
@@ -344,16 +359,13 @@ export async function runGate({
       CAPABILITIES.every((name) => status.capabilities[name] === true),
       CAPABILITIES.map((name) => `${name}=${String(status.capabilities[name])}`).join(' '),
     );
-    check(
-      'status.runtime-version',
-      'G5',
-      // /api/cloud/status reports only runtime "ready" | "unavailable" today, so a missing version is noted, not failed;
+    if (typeof status.runtimeVersion === 'string' && status.runtimeVersion.length > 0) {
+      check('status.runtime-version', 'G5', true, `sidecar runtime ${status.runtimeVersion}`);
+    } else {
+      // /api/cloud/status reports only runtime "ready" | "unavailable" today, so a missing version is a note, not a check;
       // the deployed sidecar version is then read on the server and written into GATE.md.
-      true,
-      typeof status.runtimeVersion === 'string' && status.runtimeVersion.length > 0
-        ? `sidecar runtime ${status.runtimeVersion}`
-        : 'sidecar runtime not reported by /api/cloud/status; record the deployed version from the server in GATE.md',
-    );
+      note('status.runtime-version', 'G5', 'sidecar runtime not reported by /api/cloud/status; record the deployed version from the server in GATE.md');
+    }
     check('status.recallProfiles', 'G5', ['fast', 'balanced'].every((profile) => status.recallProfiles.includes(profile)), status.recallProfiles.join(','));
     if (!allowNonEmpty) {
       const existing = await client.listSnapshots({ limit: SNAPSHOT_LIST_MAX });
@@ -641,7 +653,15 @@ async function main(argv) {
   } finally {
     recorder.restore();
   }
-  const body = { runId, finishedAt: new Date().toISOString(), ok: report.ok, results: report.results, shapes: recorder.shapes };
+  const body = {
+    runId,
+    finishedAt: new Date().toISOString(),
+    ok: report.ok,
+    mode: report.mode ?? null,
+    notes: report.notes,
+    results: report.results,
+    shapes: recorder.shapes,
+  };
   writeReport(reportPath, body);
   const failed = report.results.filter((result) => !result.ok).map((result) => result.id);
   console.log(failed.length === 0 ? `GATE PASS (${report.results.length} checks)` : `GATE FAIL: ${failed.join(', ')}`);
